@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Local data and secrets
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
