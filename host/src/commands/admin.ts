@@ -7,6 +7,7 @@ import { PricePlanConfig } from '../domain/pricing.js';
 import { readSettings, stationOrThrow } from '../domain/venue.js';
 import { AppError, notFound } from '../errors.js';
 import { defineCommand, type CommandContext } from './bus.js';
+import { adjustStock } from './inventory.js';
 
 const managers = ['manager'] as const;
 
@@ -97,9 +98,25 @@ export const upsertProduct = defineCommand({
     priceMinor: z.number().int().min(0),
     sort: z.number().int().default(0),
     active: z.boolean().default(true),
+    trackStock: z.boolean().default(false),
+    minQty: z.number().int().min(0).default(0),
+    /** Starting stock for a new tracked product; ignored on edit (use count/restock). */
+    initialStock: z.number().int().min(0).optional(),
   }),
   handler(ctx, p) {
-    const id = upsert(ctx, 'products', 'product', p.id, { name: p.name, category: p.category, price_minor: p.priceMinor, sort: p.sort, active: p.active ? 1 : 0 });
+    // stock_qty is never set here; it only changes through stock movements.
+    const id = upsert(ctx, 'products', 'product', p.id, {
+      name: p.name,
+      category: p.category,
+      price_minor: p.priceMinor,
+      sort: p.sort,
+      active: p.active ? 1 : 0,
+      track_stock: p.trackStock ? 1 : 0,
+      min_qty: p.minQty,
+    });
+    if (!p.id && p.trackStock && p.initialStock && p.initialStock > 0) {
+      adjustStock(ctx, id, p.initialStock, 'initial');
+    }
     return { id };
   },
 });

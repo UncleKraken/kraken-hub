@@ -3,6 +3,7 @@ import { api, setToken } from './api';
 import { LangSwitch } from './Auth';
 import { Bookings } from './Bookings';
 import { Floor, type Selection } from './Floor';
+import { Inventory } from './Inventory';
 import { clock } from './format';
 import { setLang, t, useLang } from './i18n';
 import { Panel } from './Panel';
@@ -39,6 +40,8 @@ function TopBar({
   onSettings,
   onBookings,
   bookingCount,
+  onInventory,
+  lowStockCount,
   onEndShift,
   onSignOut,
   settingsOpen,
@@ -47,6 +50,8 @@ function TopBar({
   onSettings?: () => void;
   onBookings?: () => void;
   bookingCount?: number;
+  onInventory?: () => void;
+  lowStockCount?: number;
   onEndShift?: () => void;
   onSignOut: () => void;
   settingsOpen: boolean;
@@ -62,6 +67,12 @@ function TopBar({
         <button className="btn" onClick={onBookings}>
           {t('book.title')}
           {bookingCount ? <span className="count-pill">{bookingCount}</span> : null}
+        </button>
+      )}
+      {onInventory && (
+        <button className="btn" onClick={onInventory}>
+          {t('inv.title')}
+          {lowStockCount ? <span className="count-pill warn">{lowStockCount}</span> : null}
         </button>
       )}
       {state.me.role === 'manager' && onSettings && (
@@ -90,8 +101,9 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   const now = floor.serverNow();
   const [selection, setSelection] = useState<Selection>(null);
   const [ending, setEnding] = useState(false);
-  const [view, setView] = useState<'floor' | 'settings' | 'bookings'>('floor');
+  const [view, setView] = useState<'floor' | 'settings' | 'bookings' | 'inventory'>('floor');
   const bookingCount = state.bookings.filter((b) => b.status === 'booked').length;
+  const lowStockCount = state.lowStock.length;
   // Kept here, above the shift check: once the shift closes the desk would otherwise
   // switch to "Start your shift" and the report would vanish before it's read or printed.
   const [report, setReport] = useState<ShiftSummary | null>(null);
@@ -129,6 +141,15 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
     );
   }
 
+  if (view === 'inventory' && state.shift) {
+    return (
+      <div className="shell">
+        <TopBar state={state} settingsOpen={false} onSignOut={() => void signOut()} />
+        <Inventory me={state.me} version={state.now} onClose={() => setView('floor')} />
+      </div>
+    );
+  }
+
   if (!state.shift)
     return (
       <StartShift
@@ -150,6 +171,8 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
         onSettings={() => setView('settings')}
         onBookings={() => setView('bookings')}
         bookingCount={bookingCount}
+        onInventory={() => setView('inventory')}
+        lowStockCount={lowStockCount}
         onEndShift={() => setEnding(true)}
         onSignOut={() => void signOut()}
       />

@@ -293,4 +293,47 @@ export const migrations: string[] = [
   );
   CREATE INDEX booking_stations_by_station ON booking_stations(station_id);
   `,
+
+  // 4 — Inventory. Optional per product; stock drops with sales and is topped up by deliveries.
+  `
+  ALTER TABLE products ADD COLUMN track_stock INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0;      -- cached running total
+  ALTER TABLE products ADD COLUMN min_qty INTEGER NOT NULL DEFAULT 0;        -- low-stock threshold
+
+  -- Append-only log of every stock change, so the running total can always be reconstructed.
+  CREATE TABLE stock_movements (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id),
+    delta INTEGER NOT NULL,                       -- signed units
+    reason TEXT NOT NULL CHECK (reason IN ('sale', 'return', 'restock', 'waste', 'count', 'correction', 'initial')),
+    ref_id TEXT,                                  -- ledger id, restock order id, etc.
+    note TEXT,
+    actor_id TEXT REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX stock_by_product ON stock_movements(product_id, created_at);
+  CREATE TRIGGER stock_no_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT, 'stock movements are append-only'); END;
+  CREATE TRIGGER stock_no_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT, 'stock movements are append-only'); END;
+
+  CREATE TABLE restock_orders (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL CHECK (status IN ('ordered', 'confirmed', 'cancelled')),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    confirmed_at INTEGER,
+    confirmed_by TEXT REFERENCES users(id)
+  );
+  CREATE INDEX restock_by_status ON restock_orders(status, created_at);
+
+  CREATE TABLE restock_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES restock_orders(id),
+    product_id TEXT NOT NULL REFERENCES products(id),
+    ordered_qty INTEGER NOT NULL CHECK (ordered_qty > 0),
+    received_qty INTEGER,                          -- filled in by the operator on delivery
+    condition TEXT NOT NULL DEFAULT 'pending' CHECK (condition IN ('pending', 'complete', 'short', 'damaged'))
+  );
+  CREATE INDEX restock_items_by_order ON restock_items(order_id);
+  `,
 ];

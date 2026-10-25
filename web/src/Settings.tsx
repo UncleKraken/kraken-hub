@@ -634,7 +634,9 @@ function Products({ data, reload }: { data: AdminLists; reload: () => Promise<un
                     <b>
                       {p.name}
                       {!p.active && <span className="badge">{t('settings.archived')}</span>}
+                      {p.trackStock && p.stockQty <= p.minQty && <span className="badge badge-warn">{t('products.low')}</span>}
                     </b>
+                    {p.trackStock && <small>{t('products.inStock', { n: p.stockQty })}</small>}
                   </div>
                   <span className="list-meta">{money(p.priceMinor, base)}</span>
                   <button className="btn btn-quiet" onClick={() => setEditing(p)}>
@@ -682,7 +684,20 @@ function ProductDialog({
   const [category, setCategory] = useState(product?.category ?? categories[0] ?? '');
   const [price, setPrice] = useState(product?.priceMinor ?? 0);
   const [sort, setSort] = useState(product?.sort ?? nextSort);
-  const payload = (active: boolean) => ({ id: product?.id, name, category, priceMinor: price, sort, active });
+  const [trackStock, setTrackStock] = useState(product?.trackStock ?? false);
+  const [minQty, setMinQty] = useState(product?.minQty ?? 0);
+  const [initialStock, setInitialStock] = useState(0);
+  const payload = (active: boolean) => ({
+    id: product?.id,
+    name,
+    category,
+    priceMinor: price,
+    sort,
+    active,
+    trackStock,
+    minQty,
+    ...(!product && trackStock ? { initialStock } : {}),
+  });
   return (
     <Dialog title={product ? `${t('settings.edit')}: ${product.name}` : t('products.add')} onClose={onClose}>
       <form
@@ -714,6 +729,27 @@ function ProductDialog({
           <span>{t('settings.order')}</span>
           <input className="input" type="number" value={sort} onChange={(e) => setSort(Number(e.target.value))} />
         </label>
+        <div>
+          <label className="check">
+            <input type="checkbox" checked={trackStock} onChange={(e) => setTrackStock(e.target.checked)} />
+            {t('products.track')}
+          </label>
+          <small className="hint">{t('products.trackHint')}</small>
+        </div>
+        {trackStock && (
+          <div className="row">
+            {!product && (
+              <label className="field">
+                <span>{t('products.initial')}</span>
+                <input className="input" type="number" min={0} value={initialStock} onChange={(e) => setInitialStock(Math.max(0, Number(e.target.value)))} />
+              </label>
+            )}
+            <label className="field">
+              <span>{t('products.minQty')}</span>
+              <input className="input" type="number" min={0} value={minQty} onChange={(e) => setMinQty(Math.max(0, Number(e.target.value)))} />
+            </label>
+          </div>
+        )}
         <div className="dialog-actions">
           {product && (
             <button type="button" className="btn btn-quiet" onClick={() => void onSave(payload(!product.active))}>

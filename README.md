@@ -2,7 +2,7 @@
 
 Operator-first management software for gaming cafés and entertainment venues: PCs, consoles, sim rigs, pool, ping pong and table games, all run from one screen.
 
-> **Status:** Phase 1 done, Phase 2 under way. The host server and Hub Desk run end to end: shifts, sessions on every station type, tabs, checkout in lek and euro, tips, the end-of-shift report, and manager settings for stations, prices, products, staff and currencies, with shift history and a signed activity log. Customer PCs pair with the counter, lock and unlock with sessions, and send guest, order and help requests through the [Windows client](client/README.md). Bookings: the manager schedules them, stations show as reserved, and the operator checks customers in. Pilot at a live café, targeted release end of January 2027. See [docs/RUNNING.md](docs/RUNNING.md) to try it.
+> **Status:** Phase 1 done, Phase 2 under way. The host server and Hub Desk run end to end: shifts, sessions on every station type, tabs, checkout in lek and euro, tips, the end-of-shift report, and manager settings for stations, prices, products, staff and currencies, with shift history and a signed activity log. Customer PCs pair with the counter, lock and unlock with sessions, and send guest, order and help requests through the [Windows client](client/README.md). Bookings: the manager schedules them, stations show as reserved, and the operator checks customers in. Inventory: stock drops with sales, low items are flagged, and restock orders are received and confirmed. Pilot at a live café, targeted release end of January 2027. See [docs/RUNNING.md](docs/RUNNING.md) to try it.
 
 ![Hub Desk: floor map with a running PC session and its tab](docs/screenshots/desk-station.png)
 

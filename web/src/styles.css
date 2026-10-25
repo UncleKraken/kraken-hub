@@ -106,6 +106,7 @@ button { cursor: pointer; }
 .lang-switch button[aria-pressed='true'] { background: var(--raised); color: var(--ink); }
 .offline-banner { background: var(--ending); color: #2a0e07; text-align: center; padding: 6px; font-weight: 600; font-size: 14px; }
 .count-pill { margin-left: 8px; min-width: 20px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--paused); color: var(--deep); font-size: 12px; font-weight: 700; }
+.count-pill.warn { background: var(--ending); }
 
 .workspace { display: grid; grid-template-columns: 1fr; min-height: 0; }
 .workspace.with-panel { grid-template-columns: 1fr minmax(380px, 440px); }

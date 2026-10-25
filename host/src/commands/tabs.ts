@@ -13,6 +13,7 @@ import {
 } from '../domain/venue.js';
 import { AppError, notFound } from '../errors.js';
 import { defineCommand, type CommandContext } from './bus.js';
+import { adjustStock } from './inventory.js';
 import { openTab, postLedger } from './ledger-helpers.js';
 
 const both = ['operator', 'manager'] as const;
@@ -71,6 +72,7 @@ export const addItem = defineCommand({
       amountMinor: product.price_minor * p.qty,
       productId: product.id,
     });
+    adjustStock(ctx, product.id, -p.qty, 'sale', { refId: entryId });
     return { tabId: tab.id, entryId };
   },
 });
@@ -146,6 +148,8 @@ export const reverseEntry = defineCommand({
       reversesId: e.id,
       reason: p.reason,
     });
+    // A wrong item removed before the customer had it goes back on the shelf.
+    if (e.kind === 'item' && e.product_id) adjustStock(ctx, e.product_id, e.qty, 'return', { refId: id });
     return { entryId: id };
   },
 });
@@ -157,7 +161,12 @@ export const reverseEntry = defineCommand({
 export const refundEntry = defineCommand({
   type: 'tab.refundEntry',
   roles: [...both],
-  schema: z.object({ entryId: z.string(), reason: z.string().trim().min(1).max(120), method: z.enum(['cash', 'card']).default('cash') }),
+  schema: z.object({
+    entryId: z.string(),
+    reason: z.string().trim().min(1).max(120),
+    method: z.enum(['cash', 'card']).default('cash'),
+    returnToStock: z.boolean().default(true),
+  }),
   handler(ctx, p) {
     ctx.requireManager();
     const e = reversibleEntry(ctx, p.entryId);
@@ -189,7 +198,9 @@ export const refundEntry = defineCommand({
         .prepare("INSERT INTO cash_movements (id, shift_id, currency, amount_minor, kind, ref_id, actor_id, created_at) VALUES (?, ?, ?, ?, 'refund_out', ?, ?, ?)")
         .run(ctx.id(), shift.id, base.code, -e.amount_minor, paymentId, ctx.actor.id, ctx.now);
     }
-    ctx.audit({ action: 'tab.refund', entity: 'payment', entityId: paymentId, after: { entryId: e.id, amountMinor: e.amount_minor, method: p.method, reason: p.reason } });
+    // Returned to stock by default; the manager can treat it as waste instead.
+    if (e.kind === 'item' && e.product_id && p.returnToStock) adjustStock(ctx, e.product_id, e.qty, 'return', { refId: paymentId });
+    ctx.audit({ action: 'tab.refund', entity: 'payment', entityId: paymentId, after: { entryId: e.id, amountMinor: e.amount_minor, method: p.method, reason: p.reason, returnToStock: p.returnToStock } });
     return { paymentId, refundedMinor: e.amount_minor };
   },
 });

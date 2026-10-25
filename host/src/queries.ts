@@ -73,6 +73,8 @@ export interface FloorState {
   requests: ClientRequestView[];
   /** Bookings not yet done: today's and upcoming, newest-start first handled in the UI. */
   bookings: BookingView[];
+  /** Tracked products at or below their minimum, so the manager knows to restock. */
+  lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
 }
 
 /** Reads active bookings (booked or checked-in) with their stations, soonest first. */
@@ -186,6 +188,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       )
       .all() as (Omit<ClientRequestView, 'payload'> & { payload: string })[]).map((r) => ({ ...r, payload: JSON.parse(r.payload) as ClientRequestView['payload'] })),
     bookings,
+    lowStock: lowStock(db),
   };
 }
 
@@ -285,14 +288,27 @@ export function adminLists(db: DB) {
       sort: s.sort,
       active: !!s.active,
     })),
-    products: (db.prepare('SELECT id, name, category, price_minor, sort, active FROM products ORDER BY category, sort, name').all() as {
+    products: (db.prepare('SELECT id, name, category, price_minor, sort, active, track_stock, stock_qty, min_qty FROM products ORDER BY category, sort, name').all() as {
       id: string;
       name: string;
       category: string;
       price_minor: number;
       sort: number;
       active: number;
-    }[]).map((p) => ({ id: p.id, name: p.name, category: p.category, priceMinor: p.price_minor, sort: p.sort, active: !!p.active })),
+      track_stock: number;
+      stock_qty: number;
+      min_qty: number;
+    }[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      priceMinor: p.price_minor,
+      sort: p.sort,
+      active: !!p.active,
+      trackStock: !!p.track_stock,
+      stockQty: p.stock_qty,
+      minQty: p.min_qty,
+    })),
     currencies: listCurrencies(db),
     users: (db.prepare("SELECT id, username, display_name, role, active FROM users WHERE id <> 'system-client' ORDER BY role DESC, display_name").all() as {
       id: string;
@@ -303,6 +319,53 @@ export function adminLists(db: DB) {
     }[]).map((u) => ({ id: u.id, username: u.username, displayName: u.display_name, role: u.role, active: !!u.active })),
     settings: readSettings(db),
   };
+}
+
+export interface LowStockItem {
+  id: string;
+  name: string;
+  stockQty: number;
+  minQty: number;
+}
+
+/** Active tracked products at or below their minimum. */
+export function lowStock(db: DB): LowStockItem[] {
+  return db
+    .prepare('SELECT id, name, stock_qty AS stockQty, min_qty AS minQty FROM products WHERE active = 1 AND track_stock = 1 AND stock_qty <= min_qty ORDER BY (stock_qty - min_qty), name')
+    .all() as LowStockItem[];
+}
+
+/** Everything the inventory page needs, for operators and managers alike. */
+export function inventoryView(db: DB) {
+  return {
+    products: db
+      .prepare('SELECT id, name, category, stock_qty AS stockQty, min_qty AS minQty FROM products WHERE active = 1 AND track_stock = 1 ORDER BY category, sort, name')
+      .all() as { id: string; name: string; category: string; stockQty: number; minQty: number }[],
+    lowStock: lowStock(db),
+    orders: restockOrders(db),
+  };
+}
+
+export function restockOrders(db: DB) {
+  const orders = db.prepare("SELECT * FROM restock_orders WHERE status = 'ordered' ORDER BY created_at").all() as {
+    id: string;
+    status: string;
+    notes: string;
+    created_at: number;
+    created_by: string;
+  }[];
+  const itemStmt = db.prepare(
+    'SELECT ri.id, ri.product_id AS productId, p.name, ri.ordered_qty AS orderedQty, ri.received_qty AS receivedQty, ri.condition FROM restock_items ri JOIN products p ON p.id = ri.product_id WHERE ri.order_id = ?',
+  );
+  const who = db.prepare('SELECT display_name AS name FROM users WHERE id = ?');
+  return orders.map((o) => ({
+    id: o.id,
+    status: o.status,
+    notes: o.notes,
+    createdAt: o.created_at,
+    createdBy: (who.get(o.created_by) as { name: string } | undefined)?.name ?? '',
+    items: itemStmt.all(o.id) as { id: string; productId: string; name: string; orderedQty: number; receivedQty: number | null; condition: string }[],
+  }));
 }
 
 export function auditPage(db: DB, beforeSeq: number | null, limit = 100) {

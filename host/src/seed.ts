@@ -45,18 +45,28 @@ export function seedDemo(db: DB, now = Date.now()): void {
   run('admin.station.upsert', { name: 'Pool 1', kind: 'table', zone: 'Tables', pricePlanId: pool, sort: sort++ });
   run('admin.station.upsert', { name: 'Ping Pong', kind: 'table', zone: 'Tables', pricePlanId: pong, sort: sort++ });
 
-  const products: [string, string, number][] = [
-    ['Coca-Cola', 'Drinks', 150],
-    ['Fanta', 'Drinks', 150],
-    ['Red Bull', 'Drinks', 300],
-    ['Water', 'Drinks', 80],
+  // Bottled/packaged items track stock; made-to-order coffee and toast don't.
+  const products: [string, string, number, number?, number?][] = [
+    // name, category, price, [initialStock], [minQty]
+    ['Coca-Cola', 'Drinks', 150, 48, 24],
+    ['Fanta', 'Drinks', 150, 36, 24],
+    ['Red Bull', 'Drinks', 300, 20, 12],
+    ['Water', 'Drinks', 80, 60, 24],
     ['Espresso', 'Coffee', 100],
     ['Cappuccino', 'Coffee', 150],
-    ['Chips', 'Snacks', 120],
-    ['Chocolate bar', 'Snacks', 100],
+    ['Chips', 'Snacks', 120, 30, 15],
+    ['Chocolate bar', 'Snacks', 100, 25, 12],
     ['Toast', 'Food', 250],
   ];
-  products.forEach(([name, category, priceMinor], i) => run('admin.product.upsert', { name, category, priceMinor, sort: i }));
+  products.forEach(([name, category, priceMinor, initialStock, minQty], i) =>
+    run('admin.product.upsert', {
+      name,
+      category,
+      priceMinor,
+      sort: i,
+      ...(initialStock !== undefined ? { trackStock: true, initialStock, minQty } : {}),
+    }),
+  );
 
   run('admin.user.upsert', { username: 'operator', displayName: 'Operator', role: 'operator', password: '1234' });
 }
