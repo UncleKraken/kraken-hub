@@ -1,5 +1,6 @@
 import { duration, money } from './format';
 import { t } from './i18n';
+import { Inbox } from './Requests';
 import { KindIcon, pendingEstimate, sessionClock, stationState } from './stations';
 import type { Currency, FloorState, StationView } from './types';
 
@@ -26,10 +27,17 @@ export function Floor({
     zones.set(z, [...(zones.get(z) ?? []), s]);
   }
 
-  if (state.stations.length === 0) return <p className="empty-note">{t('floor.empty')}</p>;
+  if (state.stations.length === 0)
+    return (
+      <>
+        <Inbox state={state} now={now} base={base} />
+        <p className="empty-note">{t('floor.empty')}</p>
+      </>
+    );
 
   return (
     <>
+      <Inbox state={state} now={now} base={base} />
       {[...zones.entries()].map(([zone, stations]) => (
         <section className="zone" key={zone} aria-label={zone || undefined}>
           {zone && <h2 className="zone-title">{zone}</h2>}
@@ -84,7 +92,16 @@ function Tile({ station, now, fetchedAt, base, selected, onClick }: { station: S
     <button className="tile" data-state={state} aria-pressed={selected} onClick={onClick}>
       <div className="tile-head">
         <span className="tile-name">{station.name}</span>
-        <KindIcon kind={station.kind} className="tile-kind" />
+        <span className="tile-head-right">
+          {station.device && (
+            <span
+              className={`dot${station.device.online ? '' : ' off'}`}
+              title={station.device.online ? t('dev.online') : t('dev.offline')}
+              aria-label={station.device.online ? t('dev.online') : t('dev.offline')}
+            />
+          )}
+          <KindIcon kind={station.kind} className="tile-kind" />
+        </span>
       </div>
       <div className="tile-time">
         {clockInfo ? (

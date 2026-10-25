@@ -291,6 +291,28 @@ button { cursor: pointer; }
   .settings-nav hr { display: none; }
 }
 
+/* ---- Requests inbox (above the floor) -------------------------------------------------------- */
+.inbox { display: grid; gap: 8px; margin-bottom: 20px; }
+.req {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 10px 12px 10px 16px; border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--busy) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--busy) 45%, var(--line)); border-left: 4px solid var(--busy);
+}
+.req-device { --busy: var(--paused); }
+.req-help { --busy: var(--ending); }
+.req-text { display: grid; min-width: 0; }
+.req-text b { font-weight: 600; }
+.req-text small { color: var(--ink-2); }
+.req-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.req-actions .btn { min-height: 40px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--free); }
+.dot.off { background: var(--ending); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ending) 25%, transparent); }
+.tile-head-right { display: flex; align-items: center; gap: 8px; }
+.device-box { display: grid; gap: 10px; padding: 12px; border-radius: var(--radius-m); border: 1px solid var(--line-soft); }
+.device-box header { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.device-box header span { display: flex; align-items: center; gap: 8px; }
+.device-box small { color: var(--ink-3); }
+
 /* ---- Customer PC ----------------------------------------------------------------------------
  * The lock screen fills every monitor; the widget lives in a ~360px window in a screen corner.
  */

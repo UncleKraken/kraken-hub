@@ -80,6 +80,7 @@ export function Panel({
       <div className="panel-body">
         {station && !live && !station.outOfOrder && <StartOptions station={station} base={base} />}
         {station && live && <LiveControls station={station} now={now} fetchedAt={state.now} base={base} />}
+        {station?.device && <DeviceBox station={station} isManager={state.me.role === 'manager'} />}
 
         {tab && (
           <section>
@@ -411,6 +412,96 @@ function ProductPicker({ products, base, target }: { products: Product[]; base: 
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+/* ---- Customer PC controls ------------------------------------------------------------------ */
+
+function DeviceBox({ station, isManager }: { station: StationView; isManager: boolean }) {
+  const { run, toast } = useRun();
+  const d = station.device!;
+  const [confirm, setConfirm] = useState<'restart' | 'shutdown' | 'logoff' | null>(null);
+  const [messaging, setMessaging] = useState(false);
+  const [text, setText] = useState('');
+  const labels = { restart: t('dev.restart'), shutdown: t('dev.shutdown'), logoff: t('dev.logoff') };
+
+  const send = async (action: string, extra: Record<string, unknown> = {}) => {
+    const r = await run('station.remote', { stationId: station.id, action, ...extra });
+    if (r) toast(t('dev.sent', { name: station.name }), 'success');
+    return r;
+  };
+
+  return (
+    <section className="device-box">
+      <header>
+        <span>
+          <span className={`dot${d.online ? '' : ' off'}`} aria-hidden="true" />
+          <b>{d.online ? t('dev.online') : t('dev.offline')}</b>
+        </span>
+        <small>
+          {d.hostname} · {d.ip}
+        </small>
+      </header>
+      {!d.online && d.lastSeenAt && <small>{t('dev.lastSeen', { time: clock(d.lastSeenAt) })}</small>}
+      <div className="btn-grid">
+        <button className="btn" disabled={!d.online} onClick={() => setMessaging(true)}>
+          {t('dev.message')}
+        </button>
+        {(['restart', 'shutdown', 'logoff'] as const).map((a) => (
+          <button key={a} className="btn" disabled={!d.online} onClick={() => setConfirm(a)}>
+            {labels[a]}
+          </button>
+        ))}
+      </div>
+      {isManager && (
+        <button
+          className="btn btn-quiet"
+          style={{ justifySelf: 'start' }}
+          onClick={() => void run('device.remove', { deviceId: d.id })}
+        >
+          {t('dev.unpair')}
+        </button>
+      )}
+      {confirm && (
+        <Dialog title={t('dev.confirm', { action: labels[confirm], name: station.name })} onClose={() => setConfirm(null)}>
+          <div className="dialog-actions">
+            <button className="btn btn-quiet" onClick={() => setConfirm(null)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={() => void send(confirm).then(() => setConfirm(null))}>
+              {labels[confirm]}
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {messaging && (
+        <Dialog title={`${t('dev.message')} · ${station.name}`} onClose={() => setMessaging(false)}>
+          <form
+            className="form-grid"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (text.trim())
+                void send('message', { text: text.trim() }).then((r) => {
+                  if (r) {
+                    setMessaging(false);
+                    setText('');
+                  }
+                });
+            }}
+          >
+            <input className="input" value={text} onChange={(e) => setText(e.target.value)} maxLength={200} placeholder={t('dev.messagePlaceholder')} autoFocus />
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-quiet" onClick={() => setMessaging(false)}>
+                {t('common.cancel')}
+              </button>
+              <button className="btn btn-primary" disabled={!text.trim()}>
+                {t('dev.message')}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
     </section>
   );
 }

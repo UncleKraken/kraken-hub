@@ -48,6 +48,16 @@ export interface StationView {
   plan: { id: string; name: string; config: PricePlanConfig };
   session: SessionView | null;
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
+  device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+}
+
+export interface ClientRequest {
+  id: string;
+  kind: 'guest' | 'help' | 'order' | 'extend';
+  stationId: string | null;
+  stationName: string | null;
+  payload: { topic?: string; items?: { productId: string; qty: number }[]; minutes?: number };
+  createdAt: number;
 }
 
 export interface Settings {
@@ -76,6 +86,8 @@ export interface FloorState {
   stations: StationView[];
   counterTabs: { id: string; label: string; openedAt: number; balanceMinor: number; lineCount: number }[];
   products: Product[];
+  pendingDevices: { id: string; hostname: string; ip: string; mac: string; createdAt: number }[];
+  requests: ClientRequest[];
 }
 
 export interface TabLine {
