@@ -25,6 +25,10 @@ The host listens on port **7300**. On the host PC open `http://localhost:7300`. 
 
 The first time, the app asks you to set up the venue and create the manager account. Then open **Settings** (top right, or on the start-shift screen) and add, in this order: prices, stations (use "Add several" for rows of PCs), products, staff, and any extra currency like euro. After that, start a shift and the floor is ready.
 
+## Customer PCs
+
+Download `KrakenHubClient.exe` from the [client-latest release](https://github.com/UncleKraken/kraken-hub/releases/tag/client-latest) and follow [client/README.md](../client/README.md). To try the customer screens without a real PC, open `http://<host-ip>:7300/client` in any browser: it pairs like a PC and appears on the counter for approval.
+
 ## Try it with demo data
 
 On a fresh install, before starting:
