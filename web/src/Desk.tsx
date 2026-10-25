@@ -6,6 +6,7 @@ import { Receipt } from './Checkout';
 import { Floor, type Selection } from './Floor';
 import { Inventory } from './Inventory';
 import { Members } from './Members';
+import { Onboarding } from './Onboarding';
 import { clock } from './format';
 import { setLang, t, useLang } from './i18n';
 import { Panel } from './Panel';
@@ -110,6 +111,7 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   const now = floor.serverNow();
   const [selection, setSelection] = useState<Selection>(null);
   const [receiptTab, setReceiptTab] = useState<string | null>(null);
+  const [setupSkipped, setSetupSkipped] = useState(false);
   const [ending, setEnding] = useState(false);
   const [view, setView] = useState<'floor' | 'settings' | 'bookings' | 'inventory' | 'members'>('floor');
   const bookingCount = state.bookings.filter((b) => b.status === 'booked').length;
@@ -131,6 +133,11 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   };
 
   if (report) return <ShiftReport report={report} state={state} onDone={() => void signOut()} />;
+
+  // Fresh venue: walk the manager through creating a plan, stations and the first operator.
+  if (state.me.role === 'manager' && state.stations.length === 0 && !setupSkipped && view === 'floor') {
+    return <Onboarding base={base} onDone={() => void floor.refresh()} onSkip={() => setSetupSkipped(true)} />;
+  }
 
   // Managers can open settings without starting a shift (e.g. setting up the venue).
   if (view === 'settings' && state.me.role === 'manager') {

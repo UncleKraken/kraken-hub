@@ -370,6 +370,19 @@ button { cursor: pointer; }
 .receipt-total { padding-top: 8px; margin-top: 2px; border-top: 1px dashed var(--line-soft); font-size: 16px; }
 .receipt-foot { text-align: center; color: var(--ink-3); padding-top: 8px; border-top: 1px dashed var(--line-soft); }
 
+/* ---- Onboarding wizard ------------------------------------------------------------------------ */
+.auth-card.onboard { max-width: 520px; }
+.auth-card.onboard section { display: grid; gap: 8px; }
+.auth-card.onboard h3 { margin: 0; font-size: 14px; color: var(--ink-2); }
+.count-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .count-grid { grid-template-columns: 1fr; } }
+.count-field { display: grid; gap: 6px; min-width: 0; }
+.count-field > span { font-size: 13px; color: var(--ink-2); }
+.count-stepper { display: grid; grid-template-columns: 36px 1fr 36px; gap: 6px; }
+.count-stepper .input { min-width: 0; }
+.count-stepper .btn { padding: 8px 0; font-size: 18px; line-height: 1; }
+.count-stepper .input { text-align: center; font-variant-numeric: tabular-nums; }
+
 /* ---- Customer PC ----------------------------------------------------------------------------
  * The lock screen fills every monitor; the widget lives in a ~360px window in a screen corner.
  */

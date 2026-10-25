@@ -220,7 +220,61 @@ export const updateSettings = defineCommand({
   },
 });
 
-export const adminCommands = [upsertPlan, upsertStation, setOutOfOrder, upsertProduct, upsertCurrency, upsertUser, updateSettings];
+/**
+ * One-shot guided setup for a fresh venue: creates an hourly price plan, a batch of stations
+ * (PCs, consoles, tables) on it, and optionally the first operator — all in one transaction, so a
+ * new café goes from empty to a usable floor in a few taps. Refuses once any station exists, so it
+ * can't double-create; after that the manager edits things in Settings.
+ */
+export const quickSetup = defineCommand({
+  type: 'admin.quickSetup',
+  roles: [...managers],
+  schema: z.object({
+    hourlyRateMinor: z.number().int().min(0).max(100_000_000),
+    pcCount: z.number().int().min(0).max(64),
+    consoleCount: z.number().int().min(0).max(32).default(0),
+    tableCount: z.number().int().min(0).max(32).default(0),
+    operator: z
+      .object({
+        username: z.string().trim().min(2).max(32).regex(/^[a-zA-Z0-9._-]+$/),
+        displayName: z.string().trim().min(1).max(60),
+        password: z.string().min(4).max(128),
+      })
+      .optional(),
+  }),
+  handler(ctx, p) {
+    if (ctx.db.prepare('SELECT 1 FROM stations LIMIT 1').get()) throw new AppError('error.already_set_up', 409);
+    if (p.pcCount + p.consoleCount + p.tableCount === 0) throw new AppError('error.invalid_input', 400, { detail: 'no stations' });
+
+    const planId = upsert(ctx, 'price_plans', 'price_plan', undefined, {
+      name: 'Hourly',
+      config: JSON.stringify({ kind: 'hourly', rates: { '1': p.hourlyRateMinor }, billingUnitMinutes: 1, minimumMinutes: 0 }),
+      active: 1,
+    });
+
+    let sort = 0;
+    const make = (name: string, kind: 'pc' | 'console' | 'table', zone: string, control: 'agent' | 'manual') =>
+      upsert(ctx, 'stations', 'station', undefined, { name, kind, zone, control, price_plan_id: planId, sort: sort++, active: 1 });
+    for (let i = 1; i <= p.pcCount; i++) make(`PC-${String(i).padStart(2, '0')}`, 'pc', 'PC', 'agent');
+    for (let i = 1; i <= p.consoleCount; i++) make(`Console ${i}`, 'console', 'Console', 'manual');
+    for (let i = 1; i <= p.tableCount; i++) make(`Table ${i}`, 'table', 'Tables', 'manual');
+
+    let operatorCreated = false;
+    if (p.operator) {
+      if (ctx.db.prepare('SELECT 1 FROM users WHERE username = ?').get(p.operator.username)) throw new AppError('error.username_taken', 409);
+      const id = ctx.id();
+      ctx.db
+        .prepare("INSERT INTO users (id, username, display_name, role, password_hash, active, created_at) VALUES (?, ?, ?, 'operator', ?, 1, ?)")
+        .run(id, p.operator.username, p.operator.displayName, hashPassword(p.operator.password), ctx.now);
+      ctx.audit({ action: 'user.create', entity: 'user', entityId: id, after: { username: p.operator.username, displayName: p.operator.displayName, role: 'operator' } });
+      operatorCreated = true;
+    }
+
+    return { planId, pcCount: p.pcCount, consoleCount: p.consoleCount, tableCount: p.tableCount, operatorCreated };
+  },
+});
+
+export const adminCommands = [upsertPlan, upsertStation, setOutOfOrder, upsertProduct, upsertCurrency, upsertUser, updateSettings, quickSetup];
 
 /** True until the first manager account exists. */
 export function needsSetup(db: DB): boolean {
