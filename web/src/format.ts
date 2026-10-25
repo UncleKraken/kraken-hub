@@ -37,6 +37,10 @@ export function clock(ts: number): string {
   return new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ts);
 }
 
+export function dateTime(ts: number): string {
+  return new Intl.DateTimeFormat(locale(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ts);
+}
+
 export function roundToUnit(minor: number, unit: number): number {
   if (unit <= 1) return minor;
   return Math.round(minor / unit) * unit;

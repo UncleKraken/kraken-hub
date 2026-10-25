@@ -115,6 +115,35 @@ export interface TabDetail {
   }[];
 }
 
+export interface AdminLists {
+  plans: { id: string; name: string; config: PricePlanConfig; active: boolean }[];
+  stations: { id: string; name: string; kind: StationKind; zone: string; control: 'agent' | 'manual'; pricePlanId: string; sort: number; active: boolean }[];
+  products: { id: string; name: string; category: string; priceMinor: number; sort: number; active: boolean }[];
+  currencies: Currency[];
+  users: { id: string; username: string; displayName: string; role: Role; active: boolean }[];
+  settings: Settings;
+}
+
+export interface ShiftListItem {
+  id: string;
+  status: 'open' | 'closed';
+  openedAt: number;
+  closedAt: number | null;
+  userName: string;
+}
+
+export interface AuditEntry {
+  seq: number;
+  at: number;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  before: string | null;
+  after: string | null;
+  actorName: string | null;
+  approvedByName: string | null;
+}
+
 export interface ShiftSummary {
   shiftId: string;
   openedAt: number;

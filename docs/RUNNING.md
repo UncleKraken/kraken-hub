@@ -23,7 +23,7 @@ npm start
 
 The host listens on port **7300**. On the host PC open `http://localhost:7300`. On the counter PC or a tablet open `http://<host-ip>:7300` (find the IP with `ipconfig`). Allow Node.js through Windows Firewall on private networks when Windows asks.
 
-The first time, the app asks you to set up the venue and create the manager account.
+The first time, the app asks you to set up the venue and create the manager account. Then open **Settings** (top right, or on the start-shift screen) and add, in this order: prices, stations (use "Add several" for rows of PCs), products, staff, and any extra currency like euro. After that, start a shift and the floor is ready.
 
 ## Try it with demo data
 

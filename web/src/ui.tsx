@@ -62,7 +62,8 @@ export function RunProvider({ children, baseCurrency }: { children: ReactNode; b
 
   const toast = useCallback((text: string, tone: Toast['tone'] = 'info') => {
     const id = ++seq.current;
-    setToasts((ts) => [...ts.slice(-2), { id, text, tone }]);
+    // The same message twice in a row replaces the first, so repeated saves don't stack up.
+    setToasts((ts) => [...ts.filter((x) => !(x.text === text && x.tone === tone)).slice(-2), { id, text, tone }]);
     setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), tone === 'error' ? 6000 : 3500);
   }, []);
 

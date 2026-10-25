@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import { clock, money } from './format';
 import { t } from './i18n';
-import type { FloorState, ShiftSummary } from './types';
+import type { Currency, FloorState, ShiftSummary } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
 
-export function StartShift({ state, onStarted }: { state: FloorState; onStarted: () => void }) {
+export function StartShift({ state, onStarted, onSettings, onSignOut }: { state: FloorState; onStarted: () => void; onSettings?: () => void; onSignOut: () => void }) {
   const { run } = useRun();
   const [float, setFloat] = useState<Record<string, number>>(state.suggestedFloat);
   const [busy, setBusy] = useState(false);
@@ -38,6 +38,18 @@ export function StartShift({ state, onStarted }: { state: FloorState; onStarted:
             {t('shift.start')}
           </button>
         </form>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          {onSettings ? (
+            <button type="button" className="btn" style={{ flex: 'none' }} onClick={onSettings}>
+              {t('settings.open')}
+            </button>
+          ) : (
+            <span />
+          )}
+          <button type="button" className="btn btn-quiet" style={{ flex: 'none' }} onClick={onSignOut}>
+            {t('logout')}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -154,9 +166,54 @@ function Row({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** The figures of a shift report; shared by the end-of-shift report and shift history. */
+export function ShiftKV({ report, currencies }: { report: ShiftSummary; currencies: Currency[] }) {
+  const base = currencies.find((c) => c.isBase)!;
+  const cur = (code: string): Currency => currencies.find((c) => c.code === code) ?? { ...base, code, symbol: code };
+  return (
+    <dl className="kv">
+      <dt>{t('shift.sales')}</dt>
+      <dd>{money(report.salesMinor, base)}</dd>
+      <dt>{t('shift.refunds')}</dt>
+      <dd>{money(report.refundsMinor, base)}</dd>
+      <dt>{t('shift.cash')}</dt>
+      <dd>{money(report.collectedCashMinor, base)}</dd>
+      <dt>{t('shift.card')}</dt>
+      <dd>{money(report.collectedCardMinor, base)}</dd>
+      <dt>{t('shift.tips')}</dt>
+      <dd>{money(report.tips.totalMinor, base)}</dd>
+      {report.closing &&
+        Object.entries(report.closing.overShort).map(([code, v]) => (
+          <Row key={`os-${code}`}>
+            <dt>
+              {t('shift.overShort')} · {code}
+            </dt>
+            <dd style={{ color: v < 0 ? 'var(--ending)' : undefined }}>{money(v, cur(code))}</dd>
+          </Row>
+        ))}
+      {report.closing &&
+        Object.entries(report.closing.dropped).map(([code, v]) => (
+          <Row key={`dr-${code}`}>
+            <dt>
+              {t('shift.dropped')} · {code}
+            </dt>
+            <dd>{money(v, cur(code))}</dd>
+          </Row>
+        ))}
+      {report.closing &&
+        Object.entries(report.closing.floatLeft).map(([code, v]) => (
+          <Row key={`fl-${code}`}>
+            <dt>
+              {t('shift.floatLeft')} · {code}
+            </dt>
+            <dd>{money(v, cur(code))}</dd>
+          </Row>
+        ))}
+    </dl>
+  );
+}
+
 export function ShiftReport({ report, state, onDone }: { report: ShiftSummary; state: FloorState; onDone: () => void }) {
-  const base = state.currencies.find((c) => c.isBase)!;
-  const cur = (code: string) => state.currencies.find((c) => c.code === code) ?? { ...base, code, symbol: code };
   useEffect(() => {
     // Print automatically so the report can go in the drawer with the cash.
     const id = setTimeout(() => window.print(), 300);
@@ -167,45 +224,7 @@ export function ShiftReport({ report, state, onDone }: { report: ShiftSummary; s
       <p style={{ margin: 0, color: 'var(--ink-2)' }}>
         {state.settings.venueName} · {clock(report.openedAt)}–{report.closedAt ? clock(report.closedAt) : ''}
       </p>
-      <dl className="kv">
-        <dt>{t('shift.sales')}</dt>
-        <dd>{money(report.salesMinor, base)}</dd>
-        <dt>{t('shift.refunds')}</dt>
-        <dd>{money(report.refundsMinor, base)}</dd>
-        <dt>{t('shift.cash')}</dt>
-        <dd>{money(report.collectedCashMinor, base)}</dd>
-        <dt>{t('shift.card')}</dt>
-        <dd>{money(report.collectedCardMinor, base)}</dd>
-        <dt>{t('shift.tips')}</dt>
-        <dd>{money(report.tips.totalMinor, base)}</dd>
-        {report.closing &&
-          Object.entries(report.closing.overShort).map(([code, v]) => (
-            <Row key={`os-${code}`}>
-              <dt>
-                {t('shift.overShort')} · {code}
-              </dt>
-              <dd style={{ color: v < 0 ? 'var(--ending)' : undefined }}>{money(v, cur(code))}</dd>
-            </Row>
-          ))}
-        {report.closing &&
-          Object.entries(report.closing.dropped).map(([code, v]) => (
-            <Row key={`dr-${code}`}>
-              <dt>
-                {t('shift.dropped')} · {code}
-              </dt>
-              <dd>{money(v, cur(code))}</dd>
-            </Row>
-          ))}
-        {report.closing &&
-          Object.entries(report.closing.floatLeft).map(([code, v]) => (
-            <Row key={`fl-${code}`}>
-              <dt>
-                {t('shift.floatLeft')} · {code}
-              </dt>
-              <dd>{money(v, cur(code))}</dd>
-            </Row>
-          ))}
-      </dl>
+      <ShiftKV report={report} currencies={state.currencies} />
       <div className="dialog-actions no-print">
         <button className="btn" onClick={() => window.print()}>
           {t('shift.print')}
