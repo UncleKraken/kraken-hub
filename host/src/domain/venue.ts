@@ -50,6 +50,10 @@ export interface VenueSettings {
   /** How shared-shift tips are split: collector | equal | hours. */
   tipSplitRule: 'collector' | 'equal' | 'hours';
   blindCount: boolean;
+  /** A station shows "Reserved" this many minutes before a booking starts. */
+  reservedHoldMinutes: number;
+  /** Minutes after a booking's start before it counts as a no-show. */
+  noShowGraceMinutes: number;
 }
 
 export function readSettings(db: DB): VenueSettings {
@@ -60,6 +64,8 @@ export function readSettings(db: DB): VenueSettings {
     defaultLanguage: getSetting(db, 'default_language') ?? 'en',
     tipSplitRule: (getSetting(db, 'tip_split_rule') as VenueSettings['tipSplitRule']) ?? 'collector',
     blindCount: getSetting(db, 'blind_count') === '1',
+    reservedHoldMinutes: Number(getSetting(db, 'reserved_hold_minutes') ?? '15'),
+    noShowGraceMinutes: Number(getSetting(db, 'no_show_grace_minutes') ?? '15'),
   };
 }
 

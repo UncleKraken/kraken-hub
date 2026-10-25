@@ -972,6 +972,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
   const [language, setLanguage] = useState<Lang>(s.defaultLanguage);
   const [blind, setBlind] = useState(s.blindCount);
   const [tipRule, setTipRule] = useState(s.tipSplitRule);
+  const [reservedHold, setReservedHold] = useState(s.reservedHoldMinutes);
+  const [noShowGrace, setNoShowGrace] = useState(s.noShowGraceMinutes);
 
   return (
     <>
@@ -988,6 +990,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
             defaultLanguage: language,
             blindCount: blind,
             tipSplitRule: tipRule,
+            reservedHoldMinutes: reservedHold,
+            noShowGraceMinutes: noShowGrace,
           });
           if (ok && language !== s.defaultLanguage) setLang(language);
         }}
@@ -1037,6 +1041,28 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
           </label>
           <small className="hint">{t('venue.blindHint')}</small>
         </div>
+        <label className="field">
+          <span>{t('venue.reservedHold')}</span>
+          <select className="input" value={reservedHold} onChange={(e) => setReservedHold(Number(e.target.value))}>
+            {[5, 10, 15, 20, 30, 45, 60].map((m) => (
+              <option key={m} value={m}>
+                {m} {t('station.minutes')}
+              </option>
+            ))}
+          </select>
+          <small className="hint">{t('venue.reservedHoldHint')}</small>
+        </label>
+        <label className="field">
+          <span>{t('venue.noShowGrace')}</span>
+          <select className="input" value={noShowGrace} onChange={(e) => setNoShowGrace(Number(e.target.value))}>
+            {[5, 10, 15, 20, 30, 45, 60].map((m) => (
+              <option key={m} value={m}>
+                {m} {t('station.minutes')}
+              </option>
+            ))}
+          </select>
+          <small className="hint">{t('venue.noShowGraceHint')}</small>
+        </label>
         <div>
           <button className="btn btn-primary">{t('common.save')}</button>
         </div>

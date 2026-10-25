@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { money } from './format';
+import { clock, money } from './format';
 import { t } from './i18n';
 import type { ClientRequest, Currency, FloorState } from './types';
 import { Dialog, useRun } from './ui';
@@ -121,9 +121,11 @@ function RequestCard({ req, state, now, base }: { req: ClientRequest; state: Flo
   const resolve = (decision: 'done' | 'declined') => run('request.resolve', { requestId: req.id, decision });
   const guest = (payload: Record<string, unknown>) => run('request.resolveGuest', { requestId: req.id, ...payload });
   const cfg = station?.plan.config;
+  // Warn the operator if this PC is reserved soon, so a walk-in doesn't eat a booking.
+  const reserved = req.kind === 'guest' ? station?.reserved : null;
 
   return (
-    <div className={`req req-${req.kind}`}>
+    <div className={`req req-${req.kind}${reserved ? ' req-warn' : ''}`}>
       <div className="req-text">
         <b>
           {name} {t(`req.${req.kind}`)}
@@ -131,6 +133,7 @@ function RequestCard({ req, state, now, base }: { req: ClientRequest; state: Flo
         <small>
           {detail && `${detail} · `}
           {ago(req.createdAt, now)}
+          {reserved && ` · ⚠ ${t('book.reservedSoon', { name: reserved.customerName, time: clock(reserved.startsAt) })}`}
         </small>
       </div>
       <div className="req-actions">

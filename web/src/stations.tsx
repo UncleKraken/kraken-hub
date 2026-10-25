@@ -1,6 +1,6 @@
 import type { StationKind, StationView } from './types';
 
-export type StationState = 'free' | 'busy' | 'ending' | 'paused' | 'unpaid' | 'outOfOrder';
+export type StationState = 'free' | 'busy' | 'ending' | 'paused' | 'unpaid' | 'outOfOrder' | 'reserved';
 
 const ENDING_MS = 10 * 60_000;
 
@@ -12,6 +12,7 @@ export function stationState(s: StationView, now: number): StationState {
   }
   if (s.tab && s.tab.balanceMinor > 0) return 'unpaid';
   if (s.outOfOrder) return 'outOfOrder';
+  if (s.reserved) return 'reserved';
   return 'free';
 }
 

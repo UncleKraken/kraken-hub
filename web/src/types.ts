@@ -49,6 +49,24 @@ export interface StationView {
   session: SessionView | null;
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
   device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+  reserved: { bookingId: string; customerName: string; startsAt: number } | null;
+}
+
+export type BookingSource = 'phone' | 'message' | 'instagram' | 'walk_in' | 'other';
+export type BookingStatus = 'booked' | 'checked_in' | 'cancelled' | 'no_show' | 'done';
+
+export interface Booking {
+  id: string;
+  customerName: string;
+  phone: string;
+  startsAt: number;
+  durationMinutes: number;
+  notes: string;
+  source: BookingSource;
+  depositMinor: number;
+  status: BookingStatus;
+  stations: { id: string; name: string }[];
+  overdue?: boolean;
 }
 
 export interface ClientRequest {
@@ -67,6 +85,8 @@ export interface Settings {
   defaultLanguage: 'en' | 'sq';
   tipSplitRule: 'collector' | 'equal' | 'hours';
   blindCount: boolean;
+  reservedHoldMinutes: number;
+  noShowGraceMinutes: number;
 }
 
 export interface Product {
@@ -88,6 +108,7 @@ export interface FloorState {
   products: Product[];
   pendingDevices: { id: string; hostname: string; ip: string; mac: string; createdAt: number }[];
   requests: ClientRequest[];
+  bookings: Booking[];
 }
 
 export interface TabLine {

@@ -1,4 +1,4 @@
-import { duration, money } from './format';
+import { clock, duration, money } from './format';
 import { t } from './i18n';
 import { Inbox } from './Requests';
 import { KindIcon, pendingEstimate, sessionClock, stationState } from './stations';
@@ -109,12 +109,16 @@ function Tile({ station, now, fetchedAt, base, selected, onClick }: { station: S
             {duration(clockInfo.ms)}
             {sess && sess.players > 1 && <small>{sess.players}P</small>}
           </>
+        ) : state === 'reserved' && station.reserved ? (
+          <span className="tile-reserved">{clock(station.reserved.startsAt)}</span>
         ) : (
           <span aria-hidden="true">&nbsp;</span>
         )}
       </div>
       <div className="tile-foot">
-        <span className="tile-state">{t(`state.${state}`)}</span>
+        <span className="tile-state">
+          {state === 'reserved' && station.reserved ? station.reserved.customerName : t(`state.${state}`)}
+        </span>
         {owed > 0 && <span className="tile-amount">{money(owed, base)}</span>}
       </div>
       {progress !== null && <span className="tile-progress" style={{ width: `${progress}%` }} />}

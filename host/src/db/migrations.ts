@@ -264,4 +264,33 @@ export const migrations: string[] = [
   );
   CREATE INDEX requests_pending ON client_requests(status, created_at);
   `,
+
+  // 3 — Bookings. The manager owns them; the operator checks customers in on arrival.
+  `
+  CREATE TABLE bookings (
+    id TEXT PRIMARY KEY,
+    customer_name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    starts_at INTEGER NOT NULL,
+    duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+    notes TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'phone' CHECK (source IN ('phone', 'message', 'instagram', 'walk_in', 'other')),
+    deposit_minor INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('booked', 'checked_in', 'cancelled', 'no_show', 'done')),
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    checked_in_at INTEGER,
+    checked_in_by TEXT REFERENCES users(id)
+  );
+  CREATE INDEX bookings_by_start ON bookings(starts_at);
+  CREATE INDEX bookings_active ON bookings(status, starts_at);
+
+  -- Which stations a booking holds. A booking can span several (a group / party).
+  CREATE TABLE booking_stations (
+    booking_id TEXT NOT NULL REFERENCES bookings(id),
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    PRIMARY KEY (booking_id, station_id)
+  );
+  CREATE INDEX booking_stations_by_station ON booking_stations(station_id);
+  `,
 ];

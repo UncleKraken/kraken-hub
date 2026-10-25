@@ -174,6 +174,8 @@ export const updateSettings = defineCommand({
     defaultLanguage: z.enum(['en', 'sq']).optional(),
     tipSplitRule: z.enum(['collector', 'equal', 'hours']).optional(),
     blindCount: z.boolean().optional(),
+    reservedHoldMinutes: z.number().int().min(0).max(120).optional(),
+    noShowGraceMinutes: z.number().int().min(0).max(120).optional(),
   }),
   handler(ctx, p) {
     const before = readSettings(ctx.db);
@@ -184,6 +186,8 @@ export const updateSettings = defineCommand({
       default_language: p.defaultLanguage,
       tip_split_rule: p.tipSplitRule,
       blind_count: p.blindCount === undefined ? undefined : p.blindCount ? '1' : '0',
+      reserved_hold_minutes: p.reservedHoldMinutes?.toString(),
+      no_show_grace_minutes: p.noShowGraceMinutes?.toString(),
     };
     for (const [k, v] of Object.entries(map)) if (v !== undefined) setSetting(ctx.db, k, v);
     ctx.audit({ action: 'settings.update', entity: 'settings', before, after: readSettings(ctx.db) });

@@ -29,6 +29,23 @@ export interface StationView {
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
   /** The paired customer PC, for stations controlled by the Kraken Hub client. */
   device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+  /** The next booking that holds this station soon (within the reserved-hold window), if any. */
+  reserved: { bookingId: string; customerName: string; startsAt: number } | null;
+}
+
+export interface BookingView {
+  id: string;
+  customerName: string;
+  phone: string;
+  startsAt: number;
+  durationMinutes: number;
+  notes: string;
+  source: string;
+  depositMinor: number;
+  status: 'booked' | 'checked_in' | 'cancelled' | 'no_show' | 'done';
+  stations: { id: string; name: string }[];
+  /** Past its start time by the no-show grace period but not yet checked in. */
+  overdue: boolean;
 }
 
 export interface ClientRequestView {
@@ -54,6 +71,39 @@ export interface FloorState {
   pendingDevices: { id: string; hostname: string; ip: string; mac: string; createdAt: number }[];
   /** Open requests from customer PCs: guest sessions, help, orders, more time. */
   requests: ClientRequestView[];
+  /** Bookings not yet done: today's and upcoming, newest-start first handled in the UI. */
+  bookings: BookingView[];
+}
+
+/** Reads active bookings (booked or checked-in) with their stations, soonest first. */
+export function activeBookings(db: DB, now: number, graceMinutes: number): BookingView[] {
+  const rows = db
+    .prepare("SELECT * FROM bookings WHERE status IN ('booked', 'checked_in') ORDER BY starts_at")
+    .all() as {
+    id: string;
+    customer_name: string;
+    phone: string;
+    starts_at: number;
+    duration_minutes: number;
+    notes: string;
+    source: string;
+    deposit_minor: number;
+    status: BookingView['status'];
+  }[];
+  const stationStmt = db.prepare('SELECT bs.station_id AS id, s.name FROM booking_stations bs JOIN stations s ON s.id = bs.station_id WHERE bs.booking_id = ?');
+  return rows.map((b) => ({
+    id: b.id,
+    customerName: b.customer_name,
+    phone: b.phone,
+    startsAt: b.starts_at,
+    durationMinutes: b.duration_minutes,
+    notes: b.notes,
+    source: b.source,
+    depositMinor: b.deposit_minor,
+    status: b.status,
+    stations: stationStmt.all(b.id) as { id: string; name: string }[],
+    overdue: b.status === 'booked' && b.starts_at + graceMinutes * 60_000 <= now,
+  }));
 }
 
 function lineCount(db: DB, tabId: string): number {
@@ -77,6 +127,19 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       { id: p.id, name: p.name, config: PricePlanConfig.parse(JSON.parse(p.config)) },
     ]),
   );
+  const settings = readSettings(db);
+  const bookings = activeBookings(db, now, settings.noShowGraceMinutes);
+  // Soonest upcoming "booked" booking per station, within the reserved-hold window.
+  const holdUntil = now + settings.reservedHoldMinutes * 60_000;
+  const reservedByStation = new Map<string, { bookingId: string; customerName: string; startsAt: number }>();
+  for (const b of bookings) {
+    if (b.status !== 'booked') continue;
+    if (b.startsAt > holdUntil) continue; // too far away to hold yet
+    for (const st of b.stations) {
+      const current = reservedByStation.get(st.id);
+      if (!current || b.startsAt < current.startsAt) reservedByStation.set(st.id, { bookingId: b.id, customerName: b.customerName, startsAt: b.startsAt });
+    }
+  }
   const stations = (db.prepare('SELECT * FROM stations WHERE active = 1 ORDER BY sort, name').all() as StationRow[]).map((s): StationView => {
     const session = liveSessionForStation(db, s.id);
     const tab = openTabForStation(db, s.id);
@@ -91,6 +154,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       session: session ? viewSession(db, session, now) : null,
       tab: tab ? { id: tab.id, ...tabTotals(db, tab.id), lineCount: lineCount(db, tab.id) } : null,
       device: devices.get(s.id) ?? null,
+      reserved: reservedByStation.get(s.id) ?? null,
     };
   });
   const counterTabs = (db.prepare("SELECT id, label, opened_at FROM tabs WHERE status = 'open' AND station_id IS NULL ORDER BY opened_at").all() as {
@@ -101,7 +165,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
   const shift = openShiftFor(db, me.id);
   return {
     now,
-    settings: readSettings(db),
+    settings,
     currencies: listCurrencies(db).filter((c) => c.enabled),
     me,
     shift: shift ? { id: shift.id, openedAt: shift.opened_at } : null,
@@ -121,6 +185,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
          WHERE r.status = 'pending' ORDER BY r.created_at`,
       )
       .all() as (Omit<ClientRequestView, 'payload'> & { payload: string })[]).map((r) => ({ ...r, payload: JSON.parse(r.payload) as ClientRequestView['payload'] })),
+    bookings,
   };
 }
 

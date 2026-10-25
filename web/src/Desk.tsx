@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, setToken } from './api';
 import { LangSwitch } from './Auth';
+import { Bookings } from './Bookings';
 import { Floor, type Selection } from './Floor';
 import { clock } from './format';
 import { setLang, t, useLang } from './i18n';
@@ -33,7 +34,23 @@ export function Desk({ onSignedOut }: { onSignedOut: () => void }) {
   );
 }
 
-function TopBar({ state, onSettings, onEndShift, onSignOut, settingsOpen }: { state: FloorState; onSettings?: () => void; onEndShift?: () => void; onSignOut: () => void; settingsOpen: boolean }) {
+function TopBar({
+  state,
+  onSettings,
+  onBookings,
+  bookingCount,
+  onEndShift,
+  onSignOut,
+  settingsOpen,
+}: {
+  state: FloorState;
+  onSettings?: () => void;
+  onBookings?: () => void;
+  bookingCount?: number;
+  onEndShift?: () => void;
+  onSignOut: () => void;
+  settingsOpen: boolean;
+}) {
   return (
     <header className="topbar">
       <span className="topbar-venue">{state.settings.venueName}</span>
@@ -41,6 +58,12 @@ function TopBar({ state, onSettings, onEndShift, onSignOut, settingsOpen }: { st
       {state.shift && <span className="topbar-shift">{t('shift.since', { time: clock(state.shift.openedAt) })}</span>}
       <span className="topbar-user">{state.me.displayName}</span>
       <LangSwitch />
+      {onBookings && (
+        <button className="btn" onClick={onBookings}>
+          {t('book.title')}
+          {bookingCount ? <span className="count-pill">{bookingCount}</span> : null}
+        </button>
+      )}
       {state.me.role === 'manager' && onSettings && (
         <button className="btn" aria-pressed={settingsOpen} onClick={onSettings}>
           {settingsOpen ? t('settings.backToFloor') : t('settings.open')}
@@ -67,7 +90,8 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   const now = floor.serverNow();
   const [selection, setSelection] = useState<Selection>(null);
   const [ending, setEnding] = useState(false);
-  const [view, setView] = useState<'floor' | 'settings'>('floor');
+  const [view, setView] = useState<'floor' | 'settings' | 'bookings'>('floor');
+  const bookingCount = state.bookings.filter((b) => b.status === 'booked').length;
   // Kept here, above the shift check: once the shift closes the desk would otherwise
   // switch to "Start your shift" and the report would vanish before it's read or printed.
   const [report, setReport] = useState<ShiftSummary | null>(null);
@@ -96,6 +120,15 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
     );
   }
 
+  if (view === 'bookings' && state.shift) {
+    return (
+      <div className="shell">
+        <TopBar state={state} settingsOpen={false} onSignOut={() => void signOut()} />
+        <Bookings state={state} base={base} onClose={() => setView('floor')} />
+      </div>
+    );
+  }
+
   if (!state.shift)
     return (
       <StartShift
@@ -111,7 +144,15 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
 
   return (
     <div className="shell">
-      <TopBar state={state} settingsOpen={false} onSettings={() => setView('settings')} onEndShift={() => setEnding(true)} onSignOut={() => void signOut()} />
+      <TopBar
+        state={state}
+        settingsOpen={false}
+        onSettings={() => setView('settings')}
+        onBookings={() => setView('bookings')}
+        bookingCount={bookingCount}
+        onEndShift={() => setEnding(true)}
+        onSignOut={() => void signOut()}
+      />
       <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr', minHeight: 0 }}>
         {!floor.online ? <div className="offline-banner">{t('common.offline')}</div> : <div />}
         <div className={`workspace${station || tabId ? ' with-panel' : ''}`}>

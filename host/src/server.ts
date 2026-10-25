@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { actorFromToken, issueToken, revokeToken, verifyPassword, type Actor } from './auth.js';
 import { adminCommands, needsSetup, runSetup, SetupInput } from './commands/admin.js';
+import { bookingCommands, expireNoShows } from './commands/bookings.js';
 import { CommandBus, CommandEnvelope } from './commands/bus.js';
 import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
@@ -13,6 +14,7 @@ import type { DB } from './db/index.js';
 import { deviceCommands, expireGuestRequests } from './devices/commands.js';
 import { AgentHub, PairInput } from './devices/hub.js';
 import type { ShiftRow } from './domain/venue.js';
+import { readSettings } from './domain/venue.js';
 import { AppError, forbidden, notFound, unauthorized } from './errors.js';
 import { adminLists, auditPage, currentShift, floorState, tabDetail } from './queries.js';
 
@@ -48,7 +50,7 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   const { db } = opts;
   const clock = opts.clock ?? Date.now;
   const hub = new AgentHub(db, clock);
-  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...deviceCommands(hub));
+  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...bookingCommands, ...deviceCommands(hub));
   hub.attach(bus);
   const limiter = new LoginLimiter();
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024 });
@@ -108,7 +110,8 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   if (tickMs > 0) {
     ticker = setInterval(() => {
       try {
-        const expired = expirePrepaidSessions(db, clock()) + expireGuestRequests(db, clock());
+        const grace = readSettings(db).noShowGraceMinutes;
+        const expired = expirePrepaidSessions(db, clock()) + expireGuestRequests(db, clock()) + expireNoShows(db, clock(), grace);
         const devicesChanged = hub.tick();
         if (expired > 0 || devicesChanged) {
           hub.pushAll();
@@ -236,6 +239,30 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     requireManager(req);
     const before = Number((req.query as { before?: string }).before);
     return auditPage(db, Number.isFinite(before) && before > 0 ? before : null);
+  });
+
+  // Booking history for the manager: everything from the last day onward, any status.
+  app.get('/api/bookings', async (req) => {
+    requireManager(req);
+    const since = clock() - 24 * 60 * 60_000;
+    const rows = db.prepare('SELECT id FROM bookings WHERE starts_at >= ? OR status IN (\'booked\', \'checked_in\') ORDER BY starts_at DESC LIMIT 200').all(since) as { id: string }[];
+    const stationStmt = db.prepare('SELECT bs.station_id AS id, s.name FROM booking_stations bs JOIN stations s ON s.id = bs.station_id WHERE bs.booking_id = ?');
+    const detail = db.prepare('SELECT * FROM bookings WHERE id = ?');
+    return rows.map((r) => {
+      const b = detail.get(r.id) as Record<string, unknown>;
+      return {
+        id: b.id,
+        customerName: b.customer_name,
+        phone: b.phone,
+        startsAt: b.starts_at,
+        durationMinutes: b.duration_minutes,
+        notes: b.notes,
+        source: b.source,
+        depositMinor: b.deposit_minor,
+        status: b.status,
+        stations: stationStmt.all(r.id),
+      };
+    });
   });
 
   // ---- Web app -------------------------------------------------------------------
