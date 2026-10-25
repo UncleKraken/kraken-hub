@@ -195,7 +195,7 @@ export const adminCommands = [upsertPlan, upsertStation, setOutOfOrder, upsertPr
 
 /** True until the first manager account exists. */
 export function needsSetup(db: DB): boolean {
-  return !db.prepare('SELECT 1 FROM users LIMIT 1').get();
+  return !db.prepare("SELECT 1 FROM users WHERE id <> 'system-client' LIMIT 1").get();
 }
 
 export const SetupInput = z.object({

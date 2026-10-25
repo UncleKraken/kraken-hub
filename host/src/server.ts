@@ -10,6 +10,8 @@ import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
 import { tabCommands } from './commands/tabs.js';
 import type { DB } from './db/index.js';
+import { deviceCommands, expireGuestRequests } from './devices/commands.js';
+import { AgentHub, PairInput } from './devices/hub.js';
 import type { ShiftRow } from './domain/venue.js';
 import { AppError, forbidden, notFound, unauthorized } from './errors.js';
 import { adminLists, auditPage, currentShift, floorState, tabDetail } from './queries.js';
@@ -42,10 +44,12 @@ class LoginLimiter {
   }
 }
 
-export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyInstance; bus: CommandBus }> {
+export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyInstance; bus: CommandBus; hub: AgentHub }> {
   const { db } = opts;
   const clock = opts.clock ?? Date.now;
-  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands);
+  const hub = new AgentHub(db, clock);
+  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...deviceCommands(hub));
+  hub.attach(bus);
   const limiter = new LoginLimiter();
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024 });
 
@@ -86,6 +90,7 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     for (const ws of sockets) if (ws.readyState === 1) ws.send(text);
   };
   bus.onChange((info) => broadcast({ type: 'changed', command: info.type, at: clock() }));
+  hub.onPresenceChange(() => broadcast({ type: 'changed', command: 'device.presence', at: clock() }));
 
   app.get('/ws', { websocket: true }, (socket, req) => {
     const actor = actorFromToken(db, tokenOf(req), clock());
@@ -103,7 +108,12 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   if (tickMs > 0) {
     ticker = setInterval(() => {
       try {
-        if (expirePrepaidSessions(db, clock()) > 0) broadcast({ type: 'changed', command: 'session.expire', at: clock() });
+        const expired = expirePrepaidSessions(db, clock()) + expireGuestRequests(db, clock());
+        const devicesChanged = hub.tick();
+        if (expired > 0 || devicesChanged) {
+          hub.pushAll();
+          broadcast({ type: 'changed', command: 'tick', at: clock() });
+        }
       } catch (err) {
         app.log.error(err);
       }
@@ -153,7 +163,37 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     return { ok: true };
   });
 
-  app.get('/api/state', async (req) => floorState(db, requireActor(req), clock()));
+  app.get('/api/state', async (req) => floorState(db, requireActor(req), clock(), hub.onlineIds()));
+
+  // ---- Customer PCs ----------------------------------------------------------------------
+  // PCs pair with a secret they generate themselves; the operator approves them on the floor.
+  app.post('/api/agent/pair', async (req) => {
+    const input = PairInput.safeParse(req.body);
+    if (!input.success) throw new AppError('error.invalid_input', 400, { detail: input.error.issues[0]?.message ?? '' });
+    return hub.pair(input.data, req.ip);
+  });
+
+  app.get('/api/agent/status', async (req) => {
+    const q = req.query as { deviceId?: string; secret?: string };
+    const d = q.deviceId && q.secret ? hub.authenticate(q.deviceId, q.secret) : null;
+    if (!d) throw unauthorized();
+    return { status: d.status };
+  });
+
+  app.get('/api/agent/ws', { websocket: true }, (socket, req) => {
+    const q = req.query as { deviceId?: string; secret?: string; version?: string };
+    const d = q.deviceId && q.secret ? hub.authenticate(q.deviceId, q.secret) : null;
+    if (!d || d.status !== 'approved') {
+      socket.close(4401, d ? d.status : 'unauthorized');
+      return;
+    }
+    hub.connect(d, socket, req.ip, q.version ?? '');
+    socket.on('message', (data: Buffer) => {
+      const reply = hub.handle(d.id, data.toString());
+      if (reply) socket.send(JSON.stringify(reply));
+    });
+    socket.on('close', () => hub.disconnect(d.id, socket));
+  });
 
   app.get('/api/tabs/:id', async (req) => {
     requireActor(req);
@@ -209,5 +249,5 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     });
   }
 
-  return { app, bus };
+  return { app, bus, hub };
 }

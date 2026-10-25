@@ -27,6 +27,17 @@ export interface StationView {
   plan: { id: string; name: string; config: PricePlanConfig };
   session: LiveSessionView | null;
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
+  /** The paired customer PC, for stations controlled by the Kraken Hub client. */
+  device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+}
+
+export interface ClientRequestView {
+  id: string;
+  kind: 'guest' | 'help' | 'order' | 'extend';
+  stationId: string | null;
+  stationName: string | null;
+  payload: { topic?: string; items?: { productId: string; qty: number }[]; minutes?: number };
+  createdAt: number;
 }
 
 export interface FloorState {
@@ -39,13 +50,27 @@ export interface FloorState {
   stations: StationView[];
   counterTabs: { id: string; label: string; openedAt: number; balanceMinor: number; lineCount: number }[];
   products: { id: string; name: string; category: string; priceMinor: number }[];
+  /** PCs asking to join, waiting for an operator to approve them. */
+  pendingDevices: { id: string; hostname: string; ip: string; mac: string; createdAt: number }[];
+  /** Open requests from customer PCs: guest sessions, help, orders, more time. */
+  requests: ClientRequestView[];
 }
 
 function lineCount(db: DB, tabId: string): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE tab_id = ? AND kind IN ('item', 'time', 'adjustment', 'transfer')").get(tabId) as { n: number }).n;
 }
 
-export function floorState(db: DB, me: Actor, now: number): FloorState {
+export function floorState(db: DB, me: Actor, now: number, online: Set<string> = new Set()): FloorState {
+  const devices = new Map(
+    (db.prepare("SELECT id, station_id, hostname, last_seen_at, last_ip, client_version FROM devices WHERE status = 'approved' AND station_id IS NOT NULL").all() as {
+      id: string;
+      station_id: string;
+      hostname: string;
+      last_seen_at: number | null;
+      last_ip: string;
+      client_version: string;
+    }[]).map((d) => [d.station_id, { id: d.id, hostname: d.hostname, online: online.has(d.id), lastSeenAt: d.last_seen_at, ip: d.last_ip, version: d.client_version }]),
+  );
   const plans = new Map(
     (db.prepare('SELECT id, name, config FROM price_plans').all() as { id: string; name: string; config: string }[]).map((p) => [
       p.id,
@@ -65,6 +90,7 @@ export function floorState(db: DB, me: Actor, now: number): FloorState {
       plan: plans.get(s.price_plan_id)!,
       session: session ? viewSession(db, session, now) : null,
       tab: tab ? { id: tab.id, ...tabTotals(db, tab.id), lineCount: lineCount(db, tab.id) } : null,
+      device: devices.get(s.id) ?? null,
     };
   });
   const counterTabs = (db.prepare("SELECT id, label, opened_at FROM tabs WHERE status = 'open' AND station_id IS NULL ORDER BY opened_at").all() as {
@@ -85,6 +111,16 @@ export function floorState(db: DB, me: Actor, now: number): FloorState {
     products: db
       .prepare('SELECT id, name, category, price_minor AS priceMinor FROM products WHERE active = 1 ORDER BY category, sort, name')
       .all() as FloorState['products'],
+    pendingDevices: db
+      .prepare("SELECT id, hostname, last_ip AS ip, mac, created_at AS createdAt FROM devices WHERE status = 'pending' ORDER BY created_at")
+      .all() as FloorState['pendingDevices'],
+    requests: (db
+      .prepare(
+        `SELECT r.id, r.kind, r.station_id AS stationId, s.name AS stationName, r.payload, r.created_at AS createdAt
+         FROM client_requests r LEFT JOIN stations s ON s.id = r.station_id
+         WHERE r.status = 'pending' ORDER BY r.created_at`,
+      )
+      .all() as (Omit<ClientRequestView, 'payload'> & { payload: string })[]).map((r) => ({ ...r, payload: JSON.parse(r.payload) as ClientRequestView['payload'] })),
   };
 }
 
@@ -193,7 +229,7 @@ export function adminLists(db: DB) {
       active: number;
     }[]).map((p) => ({ id: p.id, name: p.name, category: p.category, priceMinor: p.price_minor, sort: p.sort, active: !!p.active })),
     currencies: listCurrencies(db),
-    users: (db.prepare('SELECT id, username, display_name, role, active FROM users ORDER BY role DESC, display_name').all() as {
+    users: (db.prepare("SELECT id, username, display_name, role, active FROM users WHERE id <> 'system-client' ORDER BY role DESC, display_name").all() as {
       id: string;
       username: string;
       display_name: string;

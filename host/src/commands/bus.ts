@@ -26,6 +26,8 @@ export interface CommandContext {
   audit: (entry: { action: string; entity: string; entityId?: string | null; before?: unknown; after?: unknown }) => void;
   /** Throws unless the actor (or an approving manager) is a manager. */
   requireManager: () => void;
+  /** Runs `fn` only if the command commits (e.g. telling a PC to restart). */
+  afterCommit: (fn: () => void) => void;
 }
 
 export interface CommandDef<S extends z.ZodType> {
@@ -33,6 +35,8 @@ export interface CommandDef<S extends z.ZodType> {
   schema: S;
   /** Roles allowed to run it at all. Handlers can demand more via ctx.requireManager(). */
   roles: Role[];
+  /** Only customer PCs may send it (via executeInternal); never accepted over the HTTP API. */
+  internal?: boolean;
   handler: (ctx: CommandContext, payload: z.infer<S>) => unknown;
 }
 
@@ -73,8 +77,17 @@ export class CommandBus {
   }
 
   execute(actor: Actor, envelope: CommandEnvelope): unknown {
+    return this.run(actor, envelope, false);
+  }
+
+  /** For commands that originate from a paired customer PC. */
+  executeInternal(actor: Actor, envelope: CommandEnvelope): unknown {
+    return this.run(actor, envelope, true);
+  }
+
+  private run(actor: Actor, envelope: CommandEnvelope, internal: boolean): unknown {
     const def = this.defs.get(envelope.type);
-    if (!def) throw new AppError('error.unknown_command', 400, { type: envelope.type });
+    if (!def || (def.internal && !internal)) throw new AppError('error.unknown_command', 400, { type: envelope.type });
 
     const seen = this.db
       .prepare('SELECT command, response FROM idempotency WHERE request_id = ?')
@@ -99,6 +112,7 @@ export class CommandBus {
 
     const now = this.clock();
     const audits: Parameters<CommandContext['audit']>[0][] = [];
+    const effects: (() => void)[] = [];
     const ctx: CommandContext = {
       db: this.db,
       actor,
@@ -110,6 +124,7 @@ export class CommandBus {
       requireManager: () => {
         if (actor.role !== 'manager' && !approvedBy) throw new AppError('error.needs_manager', 403);
       },
+      afterCommit: (fn) => effects.push(fn),
     };
 
     const run = this.db.transaction(() => {
@@ -138,6 +153,13 @@ export class CommandBus {
     });
 
     const result = run();
+    for (const fn of effects) {
+      try {
+        fn();
+      } catch {
+        // Effects are best-effort (a PC may be offline); the command itself is committed.
+      }
+    }
     for (const fn of this.listeners) {
       try {
         fn({ type: envelope.type, actorId: actor.id });

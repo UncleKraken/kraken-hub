@@ -14,18 +14,20 @@ jobs:
         # Windows is what the cafés run; Linux keeps us honest about portability.
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - run: bash scripts/ci-run.sh npm ci
+      - run: bash scripts/ci-run.sh npm run typecheck
+      - run: bash scripts/ci-run.sh npm test
+      - run: bash scripts/ci-run.sh npm run build
       - name: Smoke test the built host
-        shell: bash
         run: |
           export KRAKEN_DATA_DIR="$RUNNER_TEMP/kh-data"
           npm run seed

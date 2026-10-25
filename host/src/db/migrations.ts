@@ -224,4 +224,44 @@ export const migrations: string[] = [
   CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
   CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
   `,
+
+  // 2 — Customer PCs (devices) and the requests they send to the operator.
+  `
+  -- Built-in account used to sign actions that come from a customer PC (e.g. a customer
+  -- ending their own session). It can never sign in: inactive, unusable password.
+  INSERT INTO users (id, username, display_name, role, password_hash, active, created_at)
+  VALUES ('system-client', 'system-client', 'Customer PC', 'operator', '!', 0, 0);
+
+  CREATE TABLE devices (
+    id TEXT PRIMARY KEY,
+    machine_id TEXT NOT NULL,                     -- stable id reported by the PC (Windows MachineGuid)
+    hostname TEXT NOT NULL,
+    mac TEXT NOT NULL DEFAULT '',
+    secret_hash TEXT NOT NULL,                    -- sha256 of a secret the PC generated when pairing
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'removed')),
+    station_id TEXT REFERENCES stations(id),
+    client_version TEXT NOT NULL DEFAULT '',
+    last_ip TEXT NOT NULL DEFAULT '',
+    last_seen_at INTEGER,
+    created_at INTEGER NOT NULL,
+    approved_at INTEGER,
+    approved_by TEXT REFERENCES users(id)
+  );
+  CREATE UNIQUE INDEX one_live_device_per_station ON devices(station_id) WHERE status = 'approved' AND station_id IS NOT NULL;
+  CREATE INDEX devices_by_machine ON devices(machine_id);
+
+  CREATE TABLE client_requests (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL REFERENCES devices(id),
+    station_id TEXT REFERENCES stations(id),
+    kind TEXT NOT NULL CHECK (kind IN ('guest', 'help', 'order', 'extend')),
+    payload TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL CHECK (status IN ('pending', 'done', 'declined', 'expired')),
+    result TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolved_by TEXT REFERENCES users(id)
+  );
+  CREATE INDEX requests_pending ON client_requests(status, created_at);
+  `,
 ];
