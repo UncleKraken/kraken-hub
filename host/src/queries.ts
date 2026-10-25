@@ -269,6 +269,82 @@ export function deviceHealthDetail(db: DB, deviceId: string, online: Set<string>
   };
 }
 
+export interface BusinessReport {
+  from: number;
+  to: number;
+  revenueMinor: number; // net of refunds, base currency
+  cashMinor: number;
+  cardMinor: number;
+  tipMinor: number;
+  refundMinor: number; // total refunded (positive number)
+  paymentCount: number;
+  sessionCount: number;
+  topProducts: { productId: string; name: string; qty: number; revenueMinor: number }[];
+  daily: { day: string; revenueMinor: number }[];
+}
+
+/**
+ * A manager's business overview for a time range, from the append-only money tables.
+ * Revenue is net (refunds subtract). Days are bucketed in the venue's local time via `tzOffsetMin`
+ * (minutes to add to UTC), so a late-night session lands on the right calendar day.
+ */
+export function businessReport(db: DB, from: number, to: number, tzOffsetMin: number): BusinessReport {
+  const off = tzOffsetMin * 60_000;
+  const totals = db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(applied_minor), 0) AS revenue,
+         COALESCE(SUM(CASE WHEN method = 'cash' THEN applied_minor ELSE 0 END), 0) AS cash,
+         COALESCE(SUM(CASE WHEN method = 'card' THEN applied_minor ELSE 0 END), 0) AS card,
+         COALESCE(SUM(tip_minor), 0) AS tip,
+         COALESCE(-SUM(CASE WHEN applied_minor < 0 THEN applied_minor ELSE 0 END), 0) AS refund,
+         COUNT(*) AS n
+       FROM payments WHERE created_at >= ? AND created_at < ?`,
+    )
+    .get(from, to) as { revenue: number; cash: number; card: number; tip: number; refund: number; n: number };
+
+  const sessionCount = (db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ? AND started_at < ?').get(from, to) as { n: number }).n;
+
+  const topProducts = db
+    .prepare(
+      `SELECT l.product_id AS productId, p.name AS name,
+              SUM(l.qty) AS qty, SUM(l.amount_minor) AS revenueMinor
+       FROM ledger l JOIN products p ON p.id = l.product_id
+       WHERE l.kind = 'item' AND l.product_id IS NOT NULL AND l.created_at >= ? AND l.created_at < ?
+       GROUP BY l.product_id
+       HAVING SUM(l.qty) <> 0
+       ORDER BY revenueMinor DESC
+       LIMIT 10`,
+    )
+    .all(from, to) as BusinessReport['topProducts'];
+
+  const daily = (
+    db
+      .prepare(
+        // CAST keeps the bucket an integer day index; without it a bound offset can make the
+        // division REAL, splitting one calendar day into several buckets.
+        `SELECT CAST((created_at + ?) / 86400000 AS INTEGER) AS dayIdx, SUM(applied_minor) AS rev
+         FROM payments WHERE created_at >= ? AND created_at < ?
+         GROUP BY dayIdx ORDER BY dayIdx`,
+      )
+      .all(off, from, to) as { dayIdx: number; rev: number }[]
+  ).map((r) => ({ day: new Date(r.dayIdx * 86400000).toISOString().slice(0, 10), revenueMinor: r.rev }));
+
+  return {
+    from,
+    to,
+    revenueMinor: totals.revenue,
+    cashMinor: totals.cash,
+    cardMinor: totals.card,
+    tipMinor: totals.tip,
+    refundMinor: totals.refund,
+    paymentCount: totals.n,
+    sessionCount,
+    topProducts,
+    daily,
+  };
+}
+
 export interface TabDetail {
   id: string;
   stationId: string | null;

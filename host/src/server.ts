@@ -21,7 +21,7 @@ import { TelemetryInput } from './devices/health.js';
 import type { ShiftRow } from './domain/venue.js';
 import { readSettings } from './domain/venue.js';
 import { AppError, forbidden, notFound, unauthorized } from './errors.js';
-import { adminLists, auditPage, currentShift, deviceHealthDetail, floorState, inventoryView, memberDetail, searchMembers, tabDetail } from './queries.js';
+import { adminLists, auditPage, businessReport, currentShift, deviceHealthDetail, floorState, inventoryView, memberDetail, searchMembers, tabDetail } from './queries.js';
 
 export interface ServerOptions {
   db: DB;
@@ -265,6 +265,18 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   app.get('/api/admin', async (req) => {
     requireManager(req);
     return adminLists(db);
+  });
+
+  // Manager business overview over a time range (revenue, cash/card, tips, top products).
+  app.get('/api/admin/report', async (req) => {
+    requireManager(req);
+    const q = req.query as { from?: string; to?: string; tz?: string };
+    const now = clock();
+    const to = q.to ? Number(q.to) : now;
+    const from = q.from ? Number(q.from) : to - 7 * 24 * 60 * 60_000;
+    const tz = q.tz ? Number(q.tz) : 0;
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to || !Number.isFinite(tz)) throw new AppError('error.invalid_input', 400);
+    return businessReport(db, from, to, tz);
   });
 
   // Backup status: when the last one ran, the rolling window on disk, and a health check.

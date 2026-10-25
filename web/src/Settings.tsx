@@ -3,12 +3,12 @@ import { api, getToken } from './api';
 import { clock, dateTime, money } from './format';
 import { setLang, t, useLang, type Lang } from './i18n';
 import { ShiftKV } from './Shift';
-import type { AdminData, AdminLists, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
+import type { AdminData, AdminLists, AdminReport, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
 
-type Section = 'stations' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'shifts' | 'activity' | 'data';
+type Section = 'stations' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'reports' | 'shifts' | 'activity' | 'data';
 const SETUP: Section[] = ['stations', 'plans', 'products', 'staff', 'currencies', 'venue'];
-const RECORDS: Section[] = ['shifts', 'activity', 'data'];
+const RECORDS: Section[] = ['reports', 'shifts', 'activity', 'data'];
 const KINDS: StationKind[] = ['pc', 'console', 'sim', 'table', 'other'];
 
 /** Manager settings. Every save goes through the same command bus as the floor, so it is audited. */
@@ -53,6 +53,8 @@ export function Settings({ version, meId, onBack }: { version: number; meId: str
           <Currencies data={data} reload={load} />
         ) : section === 'venue' ? (
           <Venue data={data} reload={load} />
+        ) : section === 'reports' ? (
+          <Reports base={baseOf(data)} />
         ) : section === 'shifts' ? (
           <Shifts currencies={data.currencies} />
         ) : section === 'activity' ? (
@@ -1228,6 +1230,118 @@ function describe(e: AuditEntry): string {
     /* not JSON */
   }
   return '';
+}
+
+type Range = 'today' | '7d' | '30d';
+
+function rangeBounds(r: Range): { from: number; to: number } {
+  const now = Date.now();
+  if (r === 'today') {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return { from: d.getTime(), to: now };
+  }
+  return { from: now - (r === '7d' ? 7 : 30) * 24 * 60 * 60_000, to: now };
+}
+
+function Reports({ base }: { base: Currency }) {
+  const [range, setRange] = useState<Range>('7d');
+  const [data, setData] = useState<AdminReport | null>(null);
+  useEffect(() => {
+    const { from, to } = rangeBounds(range);
+    const tz = -new Date().getTimezoneOffset();
+    setData(null);
+    void api.get<AdminReport>(`/api/admin/report?from=${from}&to=${to}&tz=${tz}`).then(setData).catch(() => undefined);
+  }, [range]);
+
+  const peak = data ? Math.max(1, ...data.daily.map((d) => d.revenueMinor)) : 1;
+  const topQty = data ? Math.max(1, ...data.topProducts.map((p) => p.qty)) : 1;
+
+  return (
+    <>
+      <Head title={t('settings.reports')} intro={t('report.intro')} />
+      <div className="settings-body">
+        <div className="seg" role="group" aria-label={t('settings.reports')} style={{ justifySelf: 'start' }}>
+          {(['today', '7d', '30d'] as Range[]).map((r) => (
+            <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)}>
+              {t(`report.range.${r}`)}
+            </button>
+          ))}
+        </div>
+
+        {!data ? (
+          <p className="empty-note">{t('common.loading')}</p>
+        ) : (
+          <>
+            <div className="data-cards">
+              <div className="data-card">
+                <small>{t('report.revenue')}</small>
+                <b>{money(data.revenueMinor, base)}</b>
+              </div>
+              <div className="data-card">
+                <small>{t('report.cash')}</small>
+                <b>{money(data.cashMinor, base)}</b>
+              </div>
+              <div className="data-card">
+                <small>{t('report.card')}</small>
+                <b>{money(data.cardMinor, base)}</b>
+              </div>
+              <div className="data-card">
+                <small>{t('report.tips')}</small>
+                <b>{money(data.tipMinor, base)}</b>
+              </div>
+              <div className="data-card">
+                <small>{t('report.sessions')}</small>
+                <b>{data.sessionCount}</b>
+              </div>
+              {data.refundMinor > 0 && (
+                <div className="data-card warn">
+                  <small>{t('report.refunds')}</small>
+                  <b>{money(data.refundMinor, base)}</b>
+                </div>
+              )}
+            </div>
+
+            {data.daily.length > 0 && (
+              <section>
+                <h3 className="section-title">{t('report.daily')}</h3>
+                <div className="bars" role="img" aria-label={t('report.daily')}>
+                  {data.daily.map((d) => (
+                    <div className="bar-col" key={d.day} title={`${d.day}: ${money(d.revenueMinor, base)}`}>
+                      <div className="bar-track">
+                        <div className="bar-fill" style={{ height: `${Math.round((d.revenueMinor / peak) * 100)}%` }} />
+                      </div>
+                      <small>{d.day.slice(5)}</small>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section>
+              <h3 className="section-title">{t('report.topProducts')}</h3>
+              {data.topProducts.length === 0 ? (
+                <p className="empty-note">{t('report.noSales')}</p>
+              ) : (
+                <div className="list">
+                  {data.topProducts.map((p) => (
+                    <div key={p.productId} className="rank-row">
+                      <span className="rank-name">{p.name}</span>
+                      <span className="rank-bar">
+                        <span style={{ width: `${Math.round((p.qty / topQty) * 100)}%` }} />
+                      </span>
+                      <span className="rank-qty">×{p.qty}</span>
+                      <span className="rank-rev">{money(p.revenueMinor, base)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+    </>
+  );
 }
 
 function formatBytes(n: number): string {

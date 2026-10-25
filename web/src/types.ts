@@ -145,6 +145,20 @@ export interface Product {
   priceMinor: number;
 }
 
+export interface AdminReport {
+  from: number;
+  to: number;
+  revenueMinor: number;
+  cashMinor: number;
+  cardMinor: number;
+  tipMinor: number;
+  refundMinor: number;
+  paymentCount: number;
+  sessionCount: number;
+  topProducts: { productId: string; name: string; qty: number; revenueMinor: number }[];
+  daily: { day: string; revenueMinor: number }[];
+}
+
 export interface AdminData {
   enabled: boolean;
   lastBackupAt: number | null;
