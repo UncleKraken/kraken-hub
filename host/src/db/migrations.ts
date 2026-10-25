@@ -1,0 +1,227 @@
+/**
+ * Schema migrations. Append new migrations to the end; never edit a shipped one.
+ *
+ * Conventions:
+ * - Money is stored as INTEGER minor units (ISO 4217 decimals of the currency).
+ * - Timestamps are INTEGER milliseconds since the Unix epoch (UTC).
+ * - Money tables (ledger, payments, payment_tenders, cash_movements, tips) are
+ *   append-only: triggers block UPDATE and DELETE. Corrections are new rows.
+ */
+export const migrations: string[] = [
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE currencies (
+    code TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    decimals INTEGER NOT NULL CHECK (decimals BETWEEN 0 AND 3),
+    rate REAL NOT NULL CHECK (rate > 0),           -- base major units per 1 major unit
+    is_base INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    cash_denominations TEXT NOT NULL DEFAULT '[]', -- JSON array of minor-unit notes for quick-cash buttons
+    sort INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('operator', 'manager')),
+    password_hash TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE price_plans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    config TEXT NOT NULL,                          -- JSON PricePlanConfig
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE stations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('pc', 'sim', 'console', 'table', 'other')),
+    zone TEXT NOT NULL DEFAULT '',
+    control TEXT NOT NULL DEFAULT 'manual' CHECK (control IN ('agent', 'manual')),
+    price_plan_id TEXT NOT NULL REFERENCES price_plans(id),
+    sort INTEGER NOT NULL DEFAULT 0,
+    out_of_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE products (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    price_minor INTEGER NOT NULL CHECK (price_minor >= 0),
+    sort INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE shifts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    opened_at INTEGER NOT NULL,
+    closed_at INTEGER,
+    opening_float TEXT NOT NULL,                   -- JSON {currency: minor}
+    counted TEXT,                                  -- JSON {currency: minor}
+    float_left TEXT,                               -- JSON {currency: minor}
+    tips_marked_minor INTEGER NOT NULL DEFAULT 0,  -- base currency
+    notes TEXT NOT NULL DEFAULT ''
+  );
+  CREATE UNIQUE INDEX one_open_shift_per_user ON shifts(user_id) WHERE status = 'open';
+
+  CREATE TABLE tabs (
+    id TEXT PRIMARY KEY,
+    station_id TEXT REFERENCES stations(id),
+    label TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    opened_at INTEGER NOT NULL,
+    opened_by TEXT NOT NULL REFERENCES users(id),
+    closed_at INTEGER,
+    closed_by TEXT REFERENCES users(id)
+  );
+  CREATE UNIQUE INDEX one_open_tab_per_station ON tabs(station_id) WHERE status = 'open' AND station_id IS NOT NULL;
+
+  CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    tab_id TEXT NOT NULL REFERENCES tabs(id),
+    station_id TEXT NOT NULL REFERENCES stations(id),
+    mode TEXT NOT NULL CHECK (mode IN ('prepaid', 'postpaid')),
+    plan TEXT NOT NULL,                            -- JSON snapshot of the price plan at start
+    prepaid_minutes INTEGER,
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'ended')),
+    started_at INTEGER NOT NULL,
+    started_by TEXT NOT NULL REFERENCES users(id),
+    ended_at INTEGER,
+    ended_by TEXT REFERENCES users(id),
+    end_reason TEXT
+  );
+  CREATE UNIQUE INDEX one_live_session_per_station ON sessions(station_id) WHERE status <> 'ended';
+
+  CREATE TABLE session_segments (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    players INTEGER NOT NULL CHECK (players >= 1),
+    rate_minor_per_hour INTEGER NOT NULL CHECK (rate_minor_per_hour >= 0),
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER
+  );
+  CREATE INDEX segments_by_session ON session_segments(session_id);
+
+  CREATE TABLE ledger (
+    id TEXT PRIMARY KEY,
+    tab_id TEXT NOT NULL REFERENCES tabs(id),
+    kind TEXT NOT NULL CHECK (kind IN ('time', 'item', 'adjustment', 'rounding', 'transfer')),
+    description TEXT NOT NULL,
+    product_id TEXT REFERENCES products(id),
+    session_id TEXT REFERENCES sessions(id),
+    qty INTEGER NOT NULL DEFAULT 1,
+    unit_minor INTEGER NOT NULL,
+    amount_minor INTEGER NOT NULL,                 -- base currency, signed
+    reverses_id TEXT UNIQUE REFERENCES ledger(id),
+    reason TEXT,
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    shift_id TEXT REFERENCES shifts(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX ledger_by_tab ON ledger(tab_id);
+  CREATE INDEX ledger_by_shift ON ledger(shift_id);
+
+  CREATE TABLE payments (
+    id TEXT PRIMARY KEY,
+    tab_id TEXT NOT NULL REFERENCES tabs(id),
+    shift_id TEXT NOT NULL REFERENCES shifts(id),
+    method TEXT NOT NULL CHECK (method IN ('cash', 'card')),
+    applied_minor INTEGER NOT NULL,                -- base currency applied to the tab (negative = refund)
+    tip_minor INTEGER NOT NULL DEFAULT 0,          -- base currency kept as tip
+    change_minor INTEGER NOT NULL DEFAULT 0,       -- base currency handed back
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX payments_by_tab ON payments(tab_id);
+  CREATE INDEX payments_by_shift ON payments(shift_id);
+
+  CREATE TABLE payment_tenders (
+    id TEXT PRIMARY KEY,
+    payment_id TEXT NOT NULL REFERENCES payments(id),
+    currency TEXT NOT NULL REFERENCES currencies(code),
+    amount_minor INTEGER NOT NULL,                 -- in the tender currency
+    rate REAL NOT NULL,                            -- snapshot
+    base_minor INTEGER NOT NULL                    -- converted to base currency
+  );
+
+  CREATE TABLE cash_movements (
+    id TEXT PRIMARY KEY,
+    shift_id TEXT NOT NULL REFERENCES shifts(id),
+    currency TEXT NOT NULL REFERENCES currencies(code),
+    amount_minor INTEGER NOT NULL,                 -- signed, in that currency
+    kind TEXT NOT NULL CHECK (kind IN ('float_open', 'tender_in', 'change_out', 'refund_out', 'tip_payout', 'drop', 'float_left', 'adjustment')),
+    ref_id TEXT,
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX cash_by_shift ON cash_movements(shift_id);
+
+  CREATE TABLE tips (
+    id TEXT PRIMARY KEY,
+    shift_id TEXT NOT NULL REFERENCES shifts(id),
+    source TEXT NOT NULL CHECK (source IN ('checkout', 'card', 'marked')),
+    base_minor INTEGER NOT NULL,
+    payment_id TEXT REFERENCES payments(id),
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE audit_log (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    actor_id TEXT REFERENCES users(id),
+    approved_by TEXT REFERENCES users(id),
+    action TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id TEXT,
+    before TEXT,
+    after TEXT,
+    request_id TEXT
+  );
+
+  CREATE TABLE idempotency (
+    request_id TEXT PRIMARY KEY,
+    command TEXT NOT NULL,
+    actor_id TEXT,
+    response TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  -- Append-only guarantees for money and audit tables.
+  CREATE TRIGGER ledger_no_update BEFORE UPDATE ON ledger BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
+  CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
+  CREATE TRIGGER payments_no_update BEFORE UPDATE ON payments BEGIN SELECT RAISE(ABORT, 'payments are append-only'); END;
+  CREATE TRIGGER payments_no_delete BEFORE DELETE ON payments BEGIN SELECT RAISE(ABORT, 'payments are append-only'); END;
+  CREATE TRIGGER tenders_no_update BEFORE UPDATE ON payment_tenders BEGIN SELECT RAISE(ABORT, 'tenders are append-only'); END;
+  CREATE TRIGGER tenders_no_delete BEFORE DELETE ON payment_tenders BEGIN SELECT RAISE(ABORT, 'tenders are append-only'); END;
+  CREATE TRIGGER cash_no_update BEFORE UPDATE ON cash_movements BEGIN SELECT RAISE(ABORT, 'cash movements are append-only'); END;
+  CREATE TRIGGER cash_no_delete BEFORE DELETE ON cash_movements BEGIN SELECT RAISE(ABORT, 'cash movements are append-only'); END;
+  CREATE TRIGGER tips_no_update BEFORE UPDATE ON tips BEGIN SELECT RAISE(ABORT, 'tips are append-only'); END;
+  CREATE TRIGGER tips_no_delete BEFORE DELETE ON tips BEGIN SELECT RAISE(ABORT, 'tips are append-only'); END;
+  CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+  CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+  `,
+];
