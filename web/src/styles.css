@@ -359,6 +359,17 @@ button { cursor: pointer; }
 .data-card.warn { border-color: var(--ending); }
 .data-card.warn b { color: var(--ending); }
 
+/* ---- Receipt ---------------------------------------------------------------------------------- */
+.receipt { display: grid; gap: 10px; font-variant-numeric: tabular-nums; }
+.receipt-head { display: grid; gap: 2px; text-align: center; padding-bottom: 8px; border-bottom: 1px dashed var(--line-soft); }
+.receipt-head b { font-size: 17px; }
+.receipt-head span { color: var(--ink-3); font-size: 13px; }
+.receipt-lines { display: grid; gap: 4px; }
+.receipt-row { display: flex; justify-content: space-between; gap: 12px; }
+.receipt-row.dim { color: var(--ink-3); font-size: 13px; }
+.receipt-total { padding-top: 8px; margin-top: 2px; border-top: 1px dashed var(--line-soft); font-size: 16px; }
+.receipt-foot { text-align: center; color: var(--ink-3); padding-top: 8px; border-top: 1px dashed var(--line-soft); }
+
 /* ---- Customer PC ----------------------------------------------------------------------------
  * The lock screen fills every monitor; the widget lives in a ~360px window in a screen corner.
  */

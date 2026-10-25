@@ -17,6 +17,7 @@ export function Panel({
   station,
   tabId: counterTabId,
   onClose,
+  onReceipt,
 }: {
   state: FloorState;
   now: number;
@@ -24,6 +25,7 @@ export function Panel({
   station: StationView | null;
   tabId: string | null;
   onClose: () => void;
+  onReceipt: (tabId: string) => void;
 }) {
   const { run } = useRun();
   const tabId = station ? (station.tab?.id ?? null) : counterTabId;
@@ -121,6 +123,7 @@ export function Panel({
           currencies={state.currencies}
           settings={state.settings}
           onClose={() => setCheckout(false)}
+          onReceipt={onReceipt}
           onPaid={() => {
             setCheckout(false);
             if (!station) onClose();

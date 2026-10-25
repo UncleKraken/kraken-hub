@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, setToken } from './api';
 import { LangSwitch } from './Auth';
 import { Bookings } from './Bookings';
+import { Receipt } from './Checkout';
 import { Floor, type Selection } from './Floor';
 import { Inventory } from './Inventory';
 import { Members } from './Members';
@@ -108,6 +109,7 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   const base = state.currencies.find((c) => c.isBase)!;
   const now = floor.serverNow();
   const [selection, setSelection] = useState<Selection>(null);
+  const [receiptTab, setReceiptTab] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [view, setView] = useState<'floor' | 'settings' | 'bookings' | 'inventory' | 'members'>('floor');
   const bookingCount = state.bookings.filter((b) => b.status === 'booked').length;
@@ -210,7 +212,9 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
               }}
             />
           </main>
-          {(station || tabId) && <Panel key={selection?.id} state={state} now={now} base={base} station={station} tabId={tabId} onClose={() => setSelection(null)} />}
+          {(station || tabId) && (
+            <Panel key={selection?.id} state={state} now={now} base={base} station={station} tabId={tabId} onClose={() => setSelection(null)} onReceipt={setReceiptTab} />
+          )}
         </div>
       </div>
       {ending && (
@@ -223,6 +227,7 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
           }}
         />
       )}
+      {receiptTab && <Receipt tabId={receiptTab} venueName={state.settings.venueName} base={base} onDone={() => setReceiptTab(null)} />}
     </div>
   );
 }

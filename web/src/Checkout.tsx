@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
-import { floorToUnit, money, roundToUnit, toBase } from './format';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from './api';
+import { dateTime, floorToUnit, money, roundToUnit, toBase } from './format';
 import { t } from './i18n';
-import type { Currency, Settings } from './types';
+import type { Currency, Settings, TabDetail } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
+
+const PRINT_PREF = 'kh.printReceipt';
 
 export function Checkout({
   tabId,
@@ -12,6 +15,7 @@ export function Checkout({
   settings,
   onClose,
   onPaid,
+  onReceipt,
 }: {
   tabId: string;
   title: string;
@@ -20,6 +24,8 @@ export function Checkout({
   settings: Settings;
   onClose: () => void;
   onPaid: () => void;
+  /** Called with the paid tab's id when the operator wants a printed receipt. */
+  onReceipt?: (tabId: string) => void;
 }) {
   const { run, toast } = useRun();
   const base = currencies.find((c) => c.isBase)!;
@@ -28,6 +34,13 @@ export function Checkout({
   const [keepChange, setKeepChange] = useState(false);
   const [cardTip, setCardTip] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [printReceipt, setPrintReceipt] = useState(() => {
+    try {
+      return localStorage.getItem(PRINT_PREF) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   const unit = settings.cashRoundingMinor;
   const due = method === 'cash' ? roundToUnit(balanceMinor, unit) : balanceMinor;
@@ -55,7 +68,18 @@ export function Checkout({
     setBusy(false);
     if (res) {
       toast(res.changeMinor > 0 ? t('checkout.giveChange', { amount: money(res.changeMinor, base) }) : t('checkout.done'), 'success');
+      // The receipt is shown above the floor (not here), so it survives this panel closing.
+      if (printReceipt) onReceipt?.(tabId);
       onPaid();
+    }
+  };
+
+  const togglePrint = (on: boolean) => {
+    setPrintReceipt(on);
+    try {
+      localStorage.setItem(PRINT_PREF, on ? '1' : '0');
+    } catch {
+      /* storage may be unavailable */
     }
   };
 
@@ -140,12 +164,107 @@ export function Checkout({
         </>
       )}
 
+      <label className="check" style={{ marginTop: 4 }}>
+        <input type="checkbox" checked={printReceipt} onChange={(e) => togglePrint(e.target.checked)} />
+        {t('checkout.printReceipt')}
+      </label>
+
       <div className="dialog-actions">
         <button className="btn btn-quiet" onClick={onClose}>
           {t('common.cancel')}
         </button>
         <button className="btn btn-primary btn-big" disabled={!canPay || busy} onClick={() => void pay()}>
           {method === 'cash' ? t('checkout.confirmCash') : t('checkout.confirmCard')}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** A printable customer receipt, built from the authoritative closed-tab record. */
+export function Receipt({ tabId, venueName, base, onDone }: { tabId: string; venueName: string; base: Currency; onDone: () => void }) {
+  const [tab, setTab] = useState<TabDetail | null>(null);
+  useEffect(() => {
+    api
+      .get<TabDetail>(`/api/tabs/${tabId}`)
+      .then((d) => {
+        setTab(d);
+        // Give the layout a moment to settle, then open the print dialog automatically.
+        setTimeout(() => window.print(), 300);
+      })
+      .catch(() => setTab(null));
+  }, [tabId]);
+
+  const items = tab?.lines.filter((l) => !l.reversed) ?? [];
+  const payment = tab?.payments[tab.payments.length - 1] ?? null;
+
+  return (
+    <Dialog title={t('receipt.title')} onClose={onDone}>
+      {!tab ? (
+        <p className="empty-note">{t('common.loading')}</p>
+      ) : (
+        <div className="receipt">
+          <div className="receipt-head">
+            <b>{venueName}</b>
+            <span>{dateTime(tab.closedAt ?? tab.openedAt)}</span>
+            <span>{tab.stationName ?? tab.label}</span>
+          </div>
+          <div className="receipt-lines">
+            {items.map((l) => (
+              <div className="receipt-row" key={l.id}>
+                <span>
+                  {l.qty > 1 ? `${l.qty}× ` : ''}
+                  {l.description}
+                </span>
+                <span>{money(l.amountMinor, base)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="receipt-total receipt-row">
+            <b>{t('receipt.total')}</b>
+            <b>{money(tab.totals.chargedMinor, base)}</b>
+          </div>
+          {payment && (
+            <div className="receipt-lines">
+              <div className="receipt-row">
+                <span>{payment.method === 'cash' ? t('checkout.cash') : t('checkout.card')}</span>
+                <span>{money(payment.appliedMinor + payment.tipMinor, base)}</span>
+              </div>
+              {payment.tenders.map((tn, i) => (
+                <div className="receipt-row dim" key={i}>
+                  <span>{t('receipt.received')}</span>
+                  <span>{money(tn.amountMinor, base)} {tn.currency}</span>
+                </div>
+              ))}
+              {payment.tipMinor > 0 && (
+                <div className="receipt-row dim">
+                  <span>{t('checkout.tip')}</span>
+                  <span>{money(payment.tipMinor, base)}</span>
+                </div>
+              )}
+              {payment.changeMinor > 0 && (
+                <div className="receipt-row dim">
+                  <span>{t('checkout.change')}</span>
+                  <span>{money(payment.changeMinor, base)}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {tab.member && (
+            <div className="receipt-row dim">
+              <span>{tab.member.name}</span>
+              <span>{t('receipt.points', { n: tab.member.points })}</span>
+            </div>
+          )}
+          <div className="receipt-foot">{t('receipt.thanks')}</div>
+        </div>
+      )}
+      <div className="dialog-actions no-print">
+        <button className="btn" onClick={() => window.print()} disabled={!tab}>
+          {t('receipt.print')}
+        </button>
+        <button className="btn btn-primary" onClick={onDone} autoFocus>
+          {t('common.done')}
         </button>
       </div>
     </Dialog>
