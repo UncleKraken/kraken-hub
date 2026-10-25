@@ -15,10 +15,11 @@ import { tabCommands } from './commands/tabs.js';
 import type { DB } from './db/index.js';
 import { deviceCommands, expireGuestRequests } from './devices/commands.js';
 import { AgentHub, PairInput } from './devices/hub.js';
+import { TelemetryInput } from './devices/health.js';
 import type { ShiftRow } from './domain/venue.js';
 import { readSettings } from './domain/venue.js';
 import { AppError, forbidden, notFound, unauthorized } from './errors.js';
-import { adminLists, auditPage, currentShift, floorState, inventoryView, memberDetail, searchMembers, tabDetail } from './queries.js';
+import { adminLists, auditPage, currentShift, deviceHealthDetail, floorState, inventoryView, memberDetail, searchMembers, tabDetail } from './queries.js';
 
 export interface ServerOptions {
   db: DB;
@@ -178,6 +179,14 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     return hub.pair(input.data, req.ip);
   });
 
+  app.post('/api/agent/telemetry', async (req, reply) => {
+    const input = TelemetryInput.safeParse(req.body);
+    if (!input.success) throw new AppError('error.invalid_input', 400, { detail: input.error.issues[0]?.message ?? '' });
+    const res = hub.recordTelemetry(input.data);
+    reply.code(res.accepted ? 200 : 202); // 202: well-formed, but no approved PC to attach it to yet
+    return res;
+  });
+
   app.get('/api/agent/status', async (req) => {
     const q = req.query as { deviceId?: string; secret?: string };
     const d = q.deviceId && q.secret ? hub.authenticate(q.deviceId, q.secret) : null;
@@ -241,6 +250,12 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     requireManager(req);
     const before = Number((req.query as { before?: string }).before);
     return auditPage(db, Number.isFinite(before) && before > 0 ? before : null);
+  });
+
+  // Full health for one customer PC (latest snapshot + recent events), for the station panel.
+  app.get('/api/devices/:id/health', async (req) => {
+    requireActor(req);
+    return deviceHealthDetail(db, (req.params as { id: string }).id, hub.onlineIds());
   });
 
   // Inventory page data (tracked products, low stock, open orders) for both roles.

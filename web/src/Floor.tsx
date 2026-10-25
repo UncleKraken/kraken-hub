@@ -93,6 +93,15 @@ function Tile({ station, now, fetchedAt, base, selected, onClick }: { station: S
       <div className="tile-head">
         <span className="tile-name">{station.name}</span>
         <span className="tile-head-right">
+          {station.device && station.device.alerts.length > 0 && (
+            <span
+              className="tile-alert"
+              title={station.device.alerts.map((a) => t(`health.${a}`)).join(', ')}
+              aria-label={t('health.alert')}
+            >
+              ⚠
+            </span>
+          )}
           {station.device && (
             <span
               className={`dot${station.device.online ? '' : ' off'}`}

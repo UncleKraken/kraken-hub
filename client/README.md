@@ -22,9 +22,20 @@ The host PC must allow Node.js through Windows Firewall (TCP 7300, UDP 7301) on 
 Press **Ctrl + Alt + Shift + F12** on the customer PC and enter the admin code to change the
 counter address or close the client. Change the code in `C:\ProgramData\KrakenHub\client.json`.
 
+## Health reporting
+
+Every 30 seconds the client sends the counter a small health snapshot — disk space, memory,
+CPU load, uptime and, where the hardware exposes it, temperature — plus one-off events it
+notices: an unclean shutdown (power loss or hard crash, detected from a run marker) and a
+WebView crash. The counter raises a floor alert when free disk or temperature crosses the
+thresholds in Settings → Venue. Temperature comes from the ACPI thermal zone and isn't
+available on every PC; the snapshot simply omits what it can't read. No extra privileges or
+install are needed.
+
 ## Files on the PC
 
 - `C:\ProgramData\KrakenHub\client.json`: counter address, pairing secret, admin code
+- `C:\ProgramData\KrakenHub\running.flag`: marker used to detect an unclean shutdown
 - `%LocalAppData%\KrakenHub\client.log`: log for troubleshooting
 
 ## What's not done yet
@@ -32,4 +43,4 @@ counter address or close the client. Change the code in `C:\ProgramData\KrakenHu
 - Lockdown policies (Task Manager, settings, command prompt) and the per-session profile wipe:
   next step. Until then, use a standard (non-admin) Windows account for customers.
 - A protection service that restarts the client if it's killed.
-- Headset/mouse auto-fixes and health monitoring.
+- Headset/mouse auto-fixes.

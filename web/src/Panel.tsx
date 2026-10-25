@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { Checkout } from './Checkout';
 import { MemberPicker } from './Members';
-import { clock, duration, money } from './format';
+import { clock, dateTime, duration, money } from './format';
 import { t } from './i18n';
 import { pendingEstimate, sessionClock, stationState } from './stations';
-import type { Currency, FloorState, Product, StationView, TabDetail, TabLine } from './types';
+import type { Currency, DeviceHealthDetail, FloorState, HealthSummary, Product, StationView, TabDetail, TabLine } from './types';
 import { Dialog, useRun } from './ui';
 
 const PREPAID_PRESETS = [30, 60, 90, 120];
@@ -535,6 +535,7 @@ function DeviceBox({ station, isManager }: { station: StationView; isManager: bo
         </small>
       </header>
       {!d.online && d.lastSeenAt && <small>{t('dev.lastSeen', { time: clock(d.lastSeenAt) })}</small>}
+      <HealthPanel device={d} />
       <div className="btn-grid">
         <button className="btn" disabled={!d.online} onClick={() => setMessaging(true)}>
           {t('dev.message')}
@@ -594,6 +595,120 @@ function DeviceBox({ station, isManager }: { station: StationView; isManager: bo
         </Dialog>
       )}
     </section>
+  );
+}
+
+/* ---- PC health ---------------------------------------------------------------------------- */
+
+function uptimeShort(ms: number): string {
+  const mins = Math.floor(ms / 60_000);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${mins % 60}m`;
+  return `${mins}m`;
+}
+
+/** A compact stat with an optional bar; `warn` tints it when the value is in alert territory. */
+function Stat({ label, value, pct, warn }: { label: string; value: string; pct?: number | null; warn?: boolean }) {
+  return (
+    <div className={`health-stat${warn ? ' warn' : ''}`}>
+      <small>{label}</small>
+      <b>{value}</b>
+      {pct != null && (
+        <span className="health-bar" aria-hidden="true">
+          <span style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function HealthPanel({ device }: { device: NonNullable<StationView['device']> }) {
+  const { run, toast } = useRun();
+  const h = device.health;
+  const alerts = device.alerts;
+  const [history, setHistory] = useState(false);
+  const diskWarn = alerts.includes('low_disk');
+  const tempWarn = alerts.includes('high_temp');
+
+  const ack = async () => {
+    const r = await run('device.ackHealth', { deviceId: device.id });
+    if (r) toast(t('health.cleared'), 'success');
+  };
+
+  return (
+    <div className="health">
+      {alerts.length > 0 && (
+        <div className="health-alerts">
+          <span className="health-alerts-list">
+            {alerts.map((a) => (
+              <span key={a} className="health-chip">
+                {t(`health.${a}`)}
+              </span>
+            ))}
+          </span>
+          <button className="btn btn-quiet btn-sm" onClick={() => void ack()}>
+            {t('health.clear')}
+          </button>
+        </div>
+      )}
+      {h ? (
+        <div className="health-stats">
+          <Stat
+            label={t('health.disk')}
+            value={h.diskFreePct != null ? `${h.diskFreePct}%` : '—'}
+            pct={h.diskFreePct != null ? 100 - h.diskFreePct : null}
+            warn={diskWarn}
+          />
+          <Stat label={t('health.memory')} value={h.memPct != null ? `${h.memPct}%` : '—'} pct={h.memPct} />
+          <Stat label={t('health.cpu')} value={h.cpuPct != null ? `${h.cpuPct}%` : '—'} pct={h.cpuPct} />
+          <Stat label={t('health.temp')} value={h.tempC != null ? `${h.tempC}°C` : '—'} warn={tempWarn} />
+          <Stat label={t('health.uptime')} value={h.uptimeMs != null ? uptimeShort(h.uptimeMs) : '—'} />
+        </div>
+      ) : (
+        <small className="hint">{t('health.noData')}</small>
+      )}
+      <button className="btn btn-quiet btn-sm" style={{ justifySelf: 'start' }} onClick={() => setHistory(true)}>
+        {t('health.history')}
+      </button>
+      {history && <HealthHistory deviceId={device.id} onClose={() => setHistory(false)} />}
+    </div>
+  );
+}
+
+function HealthHistory({ deviceId, onClose }: { deviceId: string; onClose: () => void }) {
+  const [data, setData] = useState<DeviceHealthDetail | null>(null);
+  useEffect(() => {
+    void api.get<DeviceHealthDetail>(`/api/devices/${deviceId}/health`).then(setData).catch(() => undefined);
+  }, [deviceId]);
+  return (
+    <Dialog title={t('health.history')} onClose={onClose} wide>
+      {!data ? (
+        <p className="empty-note">{t('common.loading')}</p>
+      ) : data.events.length === 0 ? (
+        <p className="empty-note">{t('health.noneYet')}</p>
+      ) : (
+        <div className="list">
+          {data.events.map((e) => (
+            <div key={e.id} className="activity-row">
+              <time>{dateTime(e.at)}</time>
+              <div>
+                <span className={`health-sev ${e.severity}`}>{t(`health.sev.${e.severity}`)}</span> {t(`health.${e.kind}`)}
+                {e.kind === 'high_temp' && typeof e.detail.tempC === 'number' ? ` · ${e.detail.tempC}°C` : ''}
+                {e.kind === 'low_disk' && typeof e.detail.freePct === 'number' ? ` · ${e.detail.freePct}%` : ''}
+                {e.acknowledgedAt ? ` · ${t('health.acked')}` : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="dialog-actions">
+        <button className="btn btn-primary" onClick={onClose}>
+          {t('common.close')}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 

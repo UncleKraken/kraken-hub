@@ -1,6 +1,8 @@
 import type { Actor } from './auth.js';
 import { suggestedFloat, summarizeShift, type ShiftSummary } from './commands/shifts.js';
 import type { DB } from './db/index.js';
+import { summarize, type DeviceEventRow, type DeviceHealthRow, type HealthSummary } from './devices/health.js';
+import { deviceOrThrow } from './devices/commands.js';
 import { PricePlanConfig } from './domain/pricing.js';
 import {
   listCurrencies,
@@ -28,7 +30,18 @@ export interface StationView {
   session: LiveSessionView | null;
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
   /** The paired customer PC, for stations controlled by the Kraken Hub client. */
-  device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+  device: {
+    id: string;
+    hostname: string;
+    online: boolean;
+    lastSeenAt: number | null;
+    ip: string;
+    version: string;
+    /** Latest reported PC health, or null if it hasn't reported yet. */
+    health: HealthSummary | null;
+    /** Distinct kinds of open (unacknowledged) health alerts on this PC. */
+    alerts: string[];
+  } | null;
   /** The next booking that holds this station soon (within the reserved-hold window), if any. */
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
 }
@@ -75,6 +88,8 @@ export interface FloorState {
   bookings: BookingView[];
   /** Tracked products at or below their minimum, so the manager knows to restock. */
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
+  /** How many customer PCs have an open (unacknowledged) health alert. */
+  pcAlerts: number;
 }
 
 /** Reads active bookings (booked or checked-in) with their stations, soonest first. */
@@ -113,6 +128,13 @@ function lineCount(db: DB, tabId: string): number {
 }
 
 export function floorState(db: DB, me: Actor, now: number, online: Set<string> = new Set()): FloorState {
+  const healthByDevice = new Map((db.prepare('SELECT * FROM device_health').all() as DeviceHealthRow[]).map((h) => [h.device_id, summarize(h)]));
+  const alertsByDevice = new Map<string, string[]>();
+  for (const r of db.prepare('SELECT device_id, kind FROM device_events WHERE acknowledged_at IS NULL ORDER BY at').all() as { device_id: string; kind: string }[]) {
+    const list = alertsByDevice.get(r.device_id) ?? [];
+    if (!list.includes(r.kind)) list.push(r.kind);
+    alertsByDevice.set(r.device_id, list);
+  }
   const devices = new Map(
     (db.prepare("SELECT id, station_id, hostname, last_seen_at, last_ip, client_version FROM devices WHERE status = 'approved' AND station_id IS NOT NULL").all() as {
       id: string;
@@ -121,7 +143,19 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       last_seen_at: number | null;
       last_ip: string;
       client_version: string;
-    }[]).map((d) => [d.station_id, { id: d.id, hostname: d.hostname, online: online.has(d.id), lastSeenAt: d.last_seen_at, ip: d.last_ip, version: d.client_version }]),
+    }[]).map((d) => [
+      d.station_id,
+      {
+        id: d.id,
+        hostname: d.hostname,
+        online: online.has(d.id),
+        lastSeenAt: d.last_seen_at,
+        ip: d.last_ip,
+        version: d.client_version,
+        health: healthByDevice.get(d.id) ?? null,
+        alerts: alertsByDevice.get(d.id) ?? [],
+      },
+    ]),
   );
   const plans = new Map(
     (db.prepare('SELECT id, name, config FROM price_plans').all() as { id: string; name: string; config: string }[]).map((p) => [
@@ -189,6 +223,49 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       .all() as (Omit<ClientRequestView, 'payload'> & { payload: string })[]).map((r) => ({ ...r, payload: JSON.parse(r.payload) as ClientRequestView['payload'] })),
     bookings,
     lowStock: lowStock(db),
+    pcAlerts: [...devices.values()].filter((d) => d.alerts.length > 0).length,
+  };
+}
+
+export interface DeviceHealthDetail {
+  deviceId: string;
+  hostname: string;
+  online: boolean;
+  lastSeenAt: number | null;
+  ip: string;
+  version: string;
+  health: HealthSummary | null;
+  events: {
+    id: string;
+    at: number;
+    severity: 'info' | 'warn' | 'crit';
+    kind: string;
+    detail: Record<string, unknown>;
+    acknowledgedAt: number | null;
+  }[];
+}
+
+/** Full health for one PC: latest snapshot plus its recent events (newest first), for the panel. */
+export function deviceHealthDetail(db: DB, deviceId: string, online: Set<string>): DeviceHealthDetail {
+  const d = deviceOrThrow(db, deviceId);
+  const h = db.prepare('SELECT * FROM device_health WHERE device_id = ?').get(deviceId) as DeviceHealthRow | undefined;
+  const events = (db.prepare('SELECT * FROM device_events WHERE device_id = ? ORDER BY at DESC LIMIT 40').all(deviceId) as DeviceEventRow[]).map((e) => ({
+    id: e.id,
+    at: e.at,
+    severity: e.severity,
+    kind: e.kind,
+    detail: JSON.parse(e.detail) as Record<string, unknown>,
+    acknowledgedAt: e.acknowledged_at,
+  }));
+  return {
+    deviceId: d.id,
+    hostname: d.hostname,
+    online: online.has(d.id),
+    lastSeenAt: d.last_seen_at,
+    ip: d.last_ip,
+    version: d.client_version,
+    health: h ? summarize(h) : null,
+    events,
   };
 }
 

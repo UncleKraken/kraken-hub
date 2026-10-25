@@ -195,6 +195,8 @@ export const updateSettings = defineCommand({
     noShowGraceMinutes: z.number().int().min(0).max(120).optional(),
     pointsPer100: z.number().int().min(0).max(1000).optional(),
     redeemValueMinor: z.number().int().min(0).max(100000).optional(),
+    diskWarnPct: z.number().int().min(0).max(90).optional(),
+    tempWarnC: z.number().int().min(40).max(110).optional(),
   }),
   handler(ctx, p) {
     const before = readSettings(ctx.db);
@@ -209,6 +211,8 @@ export const updateSettings = defineCommand({
       no_show_grace_minutes: p.noShowGraceMinutes?.toString(),
       points_per_100: p.pointsPer100?.toString(),
       redeem_value_minor: p.redeemValueMinor?.toString(),
+      disk_warn_pct: p.diskWarnPct?.toString(),
+      temp_warn_c: p.tempWarnC?.toString(),
     };
     for (const [k, v] of Object.entries(map)) if (v !== undefined) setSetting(ctx.db, k, v);
     ctx.audit({ action: 'settings.update', entity: 'settings', before, after: readSettings(ctx.db) });

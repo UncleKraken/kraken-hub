@@ -48,8 +48,53 @@ export interface StationView {
   plan: { id: string; name: string; config: PricePlanConfig };
   session: SessionView | null;
   tab: { id: string; chargedMinor: number; paidMinor: number; balanceMinor: number; lineCount: number } | null;
-  device: { id: string; hostname: string; online: boolean; lastSeenAt: number | null; ip: string; version: string } | null;
+  device: {
+    id: string;
+    hostname: string;
+    online: boolean;
+    lastSeenAt: number | null;
+    ip: string;
+    version: string;
+    health: HealthSummary | null;
+    alerts: string[];
+  } | null;
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
+}
+
+export interface HealthSummary {
+  at: number;
+  diskFreePct: number | null;
+  diskFreeMb: number | null;
+  diskTotalMb: number | null;
+  diskGameFreePct: number | null;
+  memPct: number | null;
+  memUsedMb: number | null;
+  memTotalMb: number | null;
+  uptimeMs: number | null;
+  cpuPct: number | null;
+  tempC: number | null;
+  cpuTempC: number | null;
+  gpuTempC: number | null;
+}
+
+export type DeviceEventKind = 'unclean_shutdown' | 'client_crash' | 'low_disk' | 'high_temp' | string;
+
+export interface DeviceHealthDetail {
+  deviceId: string;
+  hostname: string;
+  online: boolean;
+  lastSeenAt: number | null;
+  ip: string;
+  version: string;
+  health: HealthSummary | null;
+  events: {
+    id: string;
+    at: number;
+    severity: 'info' | 'warn' | 'crit';
+    kind: DeviceEventKind;
+    detail: Record<string, unknown>;
+    acknowledgedAt: number | null;
+  }[];
 }
 
 export type BookingSource = 'phone' | 'message' | 'instagram' | 'walk_in' | 'other';
@@ -89,6 +134,8 @@ export interface Settings {
   noShowGraceMinutes: number;
   pointsPer100: number;
   redeemValueMinor: number;
+  diskWarnPct: number;
+  tempWarnC: number;
 }
 
 export interface Product {
@@ -112,6 +159,7 @@ export interface FloorState {
   requests: ClientRequest[];
   bookings: Booking[];
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
+  pcAlerts: number;
 }
 
 export interface Member {

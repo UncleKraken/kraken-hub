@@ -6,6 +6,8 @@ namespace KrakenHub.Client;
 public partial class App : Application
 {
     private Mutex? _single;
+    private HealthReporter? _reporter;
+    private bool _armed; // this instance owns the run marker and should clear it on exit
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -31,7 +33,29 @@ public partial class App : Application
 
         Autostart.Ensure();
         Log.Write($"Starting client {Config.Version} on {Environment.MachineName}");
-        new MainWindow(config).Show();
+
+        // Health reporting: note whether the last run ended uncleanly (power loss / hard crash),
+        // then report PC health to the counter in the background.
+        var uncleanLastRun = RunMarker.CheckAndArm();
+        _armed = true;
+        _reporter = new HealthReporter(config);
+        if (uncleanLastRun)
+        {
+            Log.Write("Previous run did not exit cleanly");
+            _reporter.QueueEvent("unclean_shutdown");
+        }
+        _reporter.Start();
+
+        new MainWindow(config, _reporter).Show();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        // A clean exit: clear the marker so next launch isn't flagged, and stop reporting.
+        // Only the instance that armed the marker clears it (a rejected second instance must not).
+        if (_armed) RunMarker.Clear();
+        _reporter?.Dispose();
+        base.OnExit(e);
     }
 
     private static void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)

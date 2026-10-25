@@ -103,6 +103,21 @@ export function deviceCommands(outbox: DeviceOutbox) {
     },
   });
 
+  /** Operator clears the open health alerts on a PC once they've dealt with them. */
+  const ackHealth = defineCommand({
+    type: 'device.ackHealth',
+    roles: [...both],
+    schema: z.object({ deviceId: z.string() }),
+    handler(ctx, p) {
+      const d = deviceOrThrow(ctx.db, p.deviceId);
+      const res = ctx.db
+        .prepare('UPDATE device_events SET acknowledged_at = ?, acknowledged_by = ? WHERE device_id = ? AND acknowledged_at IS NULL')
+        .run(ctx.now, ctx.actor.id, d.id);
+      if (res.changes > 0) ctx.audit({ action: 'device.ackHealth', entity: 'device', entityId: d.id, after: { cleared: res.changes } });
+      return { cleared: res.changes };
+    },
+  });
+
   const unpair = defineCommand({
     type: 'device.remove',
     roles: ['manager'],
@@ -259,7 +274,7 @@ export function deviceCommands(outbox: DeviceOutbox) {
     },
   });
 
-  return [approve, reject, unpair, remote, resolveGuest, resolveRequest, clientRequest, clientEndSession];
+  return [approve, reject, ackHealth, unpair, remote, resolveGuest, resolveRequest, clientRequest, clientEndSession];
 }
 
 /** Guest requests nobody answered within two minutes expire; the PC tells the customer to come to the counter. */

@@ -16,6 +16,7 @@ namespace KrakenHub.Client;
 public partial class MainWindow : Window
 {
     private readonly Config _config;
+    private readonly HealthReporter? _reporter;
     private readonly KeyboardBlocker _keys = new();
     private readonly DispatcherTimer _keepOnTop;
     private readonly DispatcherTimer _retry;
@@ -23,10 +24,11 @@ public partial class MainWindow : Window
     private bool _webReady;
     private bool _allowClose;
 
-    public MainWindow(Config config)
+    public MainWindow(Config config, HealthReporter? reporter = null)
     {
         InitializeComponent();
         _config = config;
+        _reporter = reporter;
         Web.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x10, 0x1B, 0x24); // no white flash while loading
         _keys.AdminHotkey += () => Dispatcher.BeginInvoke(OnAdminHotkey);
 
@@ -103,6 +105,7 @@ public partial class MainWindow : Window
         core.ProcessFailed += (_, e) =>
         {
             Log.Write($"WebView process failed: {e.ProcessFailedKind}");
+            _reporter?.QueueEvent("client_crash", new { kind = e.ProcessFailedKind.ToString() });
             ShowOverlay("Reconnecting…");
             _retry.Start();
         };

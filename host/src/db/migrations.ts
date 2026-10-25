@@ -369,4 +369,50 @@ export const migrations: string[] = [
 
   ALTER TABLE tabs ADD COLUMN member_id TEXT REFERENCES members(id);
   `,
+
+  // 6 — PC health. Customer PCs report telemetry; the host keeps the latest snapshot and
+  // an append-only log of notable events (unclean shutdown, client crash, low disk, hot CPU).
+  `
+  -- Latest health snapshot per PC. A cache of what the PC last reported, so it is overwritten
+  -- in place (nothing here is money or audit); the durable record is device_events below.
+  CREATE TABLE device_health (
+    device_id TEXT PRIMARY KEY REFERENCES devices(id),
+    at INTEGER NOT NULL,                  -- when the PC reported it
+    uptime_ms INTEGER,                    -- how long the PC has been up
+    cpu_pct INTEGER,                      -- 0..100, nullable (not every PC samples it)
+    mem_used_mb INTEGER,
+    mem_total_mb INTEGER,
+    disk_free_mb INTEGER,                 -- system drive
+    disk_total_mb INTEGER,
+    disk_game_free_mb INTEGER,            -- optional game/second drive
+    disk_game_total_mb INTEGER,
+    cpu_temp_c INTEGER,                   -- nullable; many PCs can't report temperature
+    gpu_temp_c INTEGER,                   -- nullable
+    raw TEXT NOT NULL DEFAULT '{}'        -- full payload as reported, for fields added later
+  );
+
+  -- Append-only log of notable health events. Immutable once written; only the
+  -- acknowledgement columns may change (an operator clearing the alert).
+  CREATE TABLE device_events (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL REFERENCES devices(id),
+    at INTEGER NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'warn', 'crit')),
+    kind TEXT NOT NULL,                   -- unclean_shutdown | client_crash | low_disk | high_temp | ...
+    detail TEXT NOT NULL DEFAULT '{}',
+    acknowledged_at INTEGER,
+    acknowledged_by TEXT REFERENCES users(id)
+  );
+  CREATE INDEX device_events_recent ON device_events(device_id, at);
+  CREATE INDEX device_events_open ON device_events(acknowledged_at) WHERE acknowledged_at IS NULL;
+  CREATE TRIGGER device_events_no_delete BEFORE DELETE ON device_events
+    BEGIN SELECT RAISE(ABORT, 'device events are append-only'); END;
+  CREATE TRIGGER device_events_immutable BEFORE UPDATE ON device_events
+  BEGIN
+    SELECT CASE
+      WHEN NEW.id <> OLD.id OR NEW.device_id <> OLD.device_id OR NEW.at <> OLD.at
+        OR NEW.severity <> OLD.severity OR NEW.kind <> OLD.kind OR NEW.detail <> OLD.detail
+      THEN RAISE(ABORT, 'device events are immutable except acknowledgement') END;
+  END;
+  `,
 ];

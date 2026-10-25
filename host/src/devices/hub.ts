@@ -7,6 +7,7 @@ import { PricePlanConfig } from '../domain/pricing.js';
 import { baseCurrency, liveSessionForStation, openTabForStation, readSettings, tabTotals, viewSession, type StationRow } from '../domain/venue.js';
 import { AppError } from '../errors.js';
 import { deviceOrThrow, type DeviceOutbox, type DeviceRow, type RemoteAction } from './commands.js';
+import { recordTelemetry, type Telemetry } from './health.js';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -119,6 +120,33 @@ export class AgentHub implements DeviceOutbox {
     const d = this.db.prepare('SELECT * FROM devices WHERE id = ?').get(deviceId) as DeviceRow | undefined;
     if (!d || d.secret_hash !== sha256(secret)) return null;
     return d;
+  }
+
+  /** The approved device for a machine id + secret, used by telemetry (which knows no device id). */
+  deviceByMachine(machineId: string, secret: string): DeviceRow | null {
+    const d = this.db
+      .prepare("SELECT * FROM devices WHERE machine_id = ? AND secret_hash = ? AND status = 'approved' LIMIT 1")
+      .get(machineId, sha256(secret)) as DeviceRow | undefined;
+    return d ?? null;
+  }
+
+  /**
+   * Accepts a health report from a customer PC. Stores the snapshot and opens any alerts,
+   * pushing the floor immediately when something notable appears. Silently ignores reports
+   * from PCs that aren't an approved station, so a client can report before it's paired.
+   */
+  recordTelemetry(t: Telemetry): { accepted: boolean; newEvents: number } {
+    const d = this.deviceByMachine(t.machineId, t.secret);
+    if (!d) return { accepted: false, newEvents: 0 };
+    const settings = readSettings(this.db);
+    const now = this.clock();
+    let newEvents = 0;
+    this.db.transaction(() => {
+      if (t.version && t.version !== d.client_version) this.db.prepare('UPDATE devices SET client_version = ? WHERE id = ?').run(t.version, d.id);
+      newEvents = recordTelemetry(this.db, d.id, t, settings, now);
+    })();
+    if (newEvents > 0) this.notifyPresence();
+    return { accepted: true, newEvents };
   }
 
   // ---- Live link ----------------------------------------------------------------------------

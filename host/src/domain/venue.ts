@@ -58,6 +58,10 @@ export interface VenueSettings {
   pointsPer100: number;
   /** Base minor units each point is worth when redeemed. 0 turns redemption off. */
   redeemValueMinor: number;
+  /** A PC's free disk at or below this percent raises a low-disk alert. */
+  diskWarnPct: number;
+  /** A PC reporting a CPU/GPU temperature at or above this (°C) raises a hot-PC alert. */
+  tempWarnC: number;
 }
 
 export function readSettings(db: DB): VenueSettings {
@@ -72,6 +76,8 @@ export function readSettings(db: DB): VenueSettings {
     noShowGraceMinutes: Number(getSetting(db, 'no_show_grace_minutes') ?? '15'),
     pointsPer100: Number(getSetting(db, 'points_per_100') ?? '0'),
     redeemValueMinor: Number(getSetting(db, 'redeem_value_minor') ?? '0'),
+    diskWarnPct: Number(getSetting(db, 'disk_warn_pct') ?? '10'),
+    tempWarnC: Number(getSetting(db, 'temp_warn_c') ?? '85'),
   };
 }
 

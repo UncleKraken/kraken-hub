@@ -1012,6 +1012,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
   const [noShowGrace, setNoShowGrace] = useState(s.noShowGraceMinutes);
   const [pointsPer100, setPointsPer100] = useState(s.pointsPer100);
   const [redeemValue, setRedeemValue] = useState(s.redeemValueMinor);
+  const [diskWarn, setDiskWarn] = useState(s.diskWarnPct);
+  const [tempWarn, setTempWarn] = useState(s.tempWarnC);
 
   return (
     <>
@@ -1032,6 +1034,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
             noShowGraceMinutes: noShowGrace,
             pointsPer100,
             redeemValueMinor: redeemValue,
+            diskWarnPct: diskWarn,
+            tempWarnC: tempWarn,
           });
           if (ok && language !== s.defaultLanguage) setLang(language);
         }}
@@ -1112,6 +1116,28 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
           <span>{t('venue.redeemValue')}</span>
           <MoneyInput currency={base} label={t('venue.redeemValue')} value={redeemValue} onChange={setRedeemValue} />
           <small className="hint">{t('venue.redeemValueHint')}</small>
+        </label>
+        <label className="field">
+          <span>{t('venue.diskWarn')}</span>
+          <select className="input" value={diskWarn} onChange={(e) => setDiskWarn(Number(e.target.value))}>
+            {[5, 10, 15, 20, 25].map((p) => (
+              <option key={p} value={p}>
+                {p}%
+              </option>
+            ))}
+          </select>
+          <small className="hint">{t('venue.diskWarnHint')}</small>
+        </label>
+        <label className="field">
+          <span>{t('venue.tempWarn')}</span>
+          <select className="input" value={tempWarn} onChange={(e) => setTempWarn(Number(e.target.value))}>
+            {[75, 80, 85, 90, 95].map((c) => (
+              <option key={c} value={c}>
+                {c}°C
+              </option>
+            ))}
+          </select>
+          <small className="hint">{t('venue.tempWarnHint')}</small>
         </label>
         <div>
           <button className="btn btn-primary">{t('common.save')}</button>
