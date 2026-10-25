@@ -187,7 +187,7 @@ internal sealed class CpuSampler
 /// logged and retried next cycle, never surfaced to the customer. Discrete events (an unclean
 /// shutdown found at startup, a WebView crash) are queued and drained on the next report.
 /// </summary>
-internal sealed class HealthReporter : IDisposable
+public sealed class HealthReporter : IDisposable
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
     private readonly Config _config;
