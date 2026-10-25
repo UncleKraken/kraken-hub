@@ -4,7 +4,7 @@ This is the developer setup for the pilot. A one-click Windows installer comes i
 
 ## Install on the host PC (Windows)
 
-1. Install **Node.js 22 LTS** from nodejs.org (tick "Automatically install the necessary tools" if offered).
+1. Install **Node.js 22 LTS or newer** from nodejs.org. No build tools are needed: the database is built into Node.
 2. Install **Git**, or download the repository as a ZIP from GitHub and unzip it.
 3. Open **PowerShell** in the project folder and run:
 

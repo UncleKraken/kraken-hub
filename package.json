@@ -1,7 +1,10 @@
 {
   "name": "kraken-hub",
   "private": true,
-  "workspaces": ["host", "web"],
+  "workspaces": [
+    "host",
+    "web"
+  ],
   "scripts": {
     "dev:host": "npm run dev -w host",
     "dev:web": "npm run dev -w web",
@@ -10,5 +13,8 @@
     "test": "npm run test -w host",
     "typecheck": "npm run typecheck -w host && npm run typecheck -w web",
     "seed": "npm run seed -w host"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }
