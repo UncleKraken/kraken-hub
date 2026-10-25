@@ -14,15 +14,6 @@ const webDir = resolve(process.env.KRAKEN_WEB_DIR ?? join(here, '..', '..', 'web
 const db = openDatabase(join(dataDir, 'kraken-hub.db'));
 const { app } = await buildServer({ db, webDir, logger: true });
 
-const shutdown = async (signal: string) => {
-  app.log.info({ signal }, 'shutting down');
-  await app.close();
-  db.close();
-  process.exit(0);
-};
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-
 await app.listen({ port, host });
 app.log.info(`Kraken Hub host ready on http://${host === '0.0.0.0' ? 'localhost' : host}:${port} (data: ${dataDir})`);
 
@@ -32,6 +23,13 @@ const discovery = startDiscovery({
   name: () => readSettings(db).venueName,
   onError: (err) => app.log.warn({ err }, 'PC discovery unavailable; PCs can still be pointed at the host address'),
 });
-app.addHook('onClose', async () => {
+
+const shutdown = async (signal: string) => {
+  app.log.info({ signal }, 'shutting down');
   discovery.close();
-});
+  await app.close();
+  db.close();
+  process.exit(0);
+};
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
