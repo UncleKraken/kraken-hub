@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host-and-web:
+    name: Host + web (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is what the cafés run; Linux keeps us honest about portability.
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Smoke test the built host
+        shell: bash
+        run: |
+          export KRAKEN_DATA_DIR="$RUNNER_TEMP/kh-data"
+          npm run seed
+          (npm start > "$RUNNER_TEMP/host.log" 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://localhost:7300/api/health && break; sleep 1; done
+          curl -sf http://localhost:7300/api/setup | grep -q '"needsSetup":false'
+          curl -sf http://localhost:7300/ | grep -q '<div id="root">'
+          echo "host OK"
