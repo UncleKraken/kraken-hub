@@ -2,7 +2,9 @@
 
 Operator-first management software for gaming cafés and entertainment venues: PCs, consoles, sim rigs, pool, ping pong and table games, all run from one screen.
 
-> **Status:** planning → Phase 1 (host server + operator panel). Pilot at a live café, targeted release end of January 2027.
+> **Status:** Phase 1 in progress. The host server and Hub Desk run end to end: shifts, sessions on every station type, tabs, checkout in lek and euro, tips and the end-of-shift report. Pilot at a live café, targeted release end of January 2027. See [docs/RUNNING.md](docs/RUNNING.md) to try it.
+
+![Hub Desk: floor map with a running PC session and its tab](docs/screenshots/desk-station.png)
 
 ## Why
 
@@ -27,6 +29,7 @@ Existing café software (ggLeap, iCafe and others) is built for the manager and 
 ## Documentation
 
 - [Product spec](docs/SPEC.md): the full design (roles, stations, money, client, reliability, roadmap)
+- [Running Kraken Hub](docs/RUNNING.md): install, demo data, where data lives, updating
 
 ## Roadmap
 

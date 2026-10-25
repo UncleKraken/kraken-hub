@@ -1,0 +1,106 @@
+import { duration, money } from './format';
+import { t } from './i18n';
+import { KindIcon, pendingEstimate, sessionClock, stationState } from './stations';
+import type { Currency, FloorState, StationView } from './types';
+
+export type Selection = { kind: 'station'; id: string } | { kind: 'tab'; id: string } | null;
+
+export function Floor({
+  state,
+  now,
+  base,
+  selection,
+  onSelect,
+  onNewCounterTab,
+}: {
+  state: FloorState;
+  now: number;
+  base: Currency;
+  selection: Selection;
+  onSelect: (s: Selection) => void;
+  onNewCounterTab: () => void;
+}) {
+  const zones = new Map<string, StationView[]>();
+  for (const s of state.stations) {
+    const z = s.zone || '';
+    zones.set(z, [...(zones.get(z) ?? []), s]);
+  }
+
+  if (state.stations.length === 0) return <p className="empty-note">{t('floor.empty')}</p>;
+
+  return (
+    <>
+      {[...zones.entries()].map(([zone, stations]) => (
+        <section className="zone" key={zone} aria-label={zone || undefined}>
+          {zone && <h2 className="zone-title">{zone}</h2>}
+          <div className="tiles">
+            {stations.map((s) => (
+              <Tile
+                key={s.id}
+                station={s}
+                now={now}
+                fetchedAt={state.now}
+                base={base}
+                selected={selection?.kind === 'station' && selection.id === s.id}
+                onClick={() => onSelect(selection?.kind === 'station' && selection.id === s.id ? null : { kind: 'station', id: s.id })}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <section className="zone">
+        <h2 className="zone-title">{t('floor.counter')}</h2>
+        <div className="counter-tabs">
+          {state.counterTabs.map((tab, i) => (
+            <button
+              key={tab.id}
+              className="chip-tab"
+              aria-pressed={selection?.kind === 'tab' && selection.id === tab.id}
+              onClick={() => onSelect({ kind: 'tab', id: tab.id })}
+            >
+              <span>{tab.label || `${t('tab.title')} ${i + 1}`}</span>
+              <b>{money(tab.balanceMinor, base)}</b>
+            </button>
+          ))}
+          <button className="btn btn-quiet" onClick={onNewCounterTab}>
+            + {t('floor.newCounterTab')}
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function Tile({ station, now, fetchedAt, base, selected, onClick }: { station: StationView; now: number; fetchedAt: number; base: Currency; selected: boolean; onClick: () => void }) {
+  const state = stationState(station, now);
+  const clockInfo = sessionClock(station, now, fetchedAt);
+  const owed = (station.tab?.balanceMinor ?? 0) + pendingEstimate(station, now, fetchedAt);
+  const sess = station.session;
+  const progress =
+    sess?.endsAt && sess.prepaidMinutes ? Math.min(100, Math.max(0, ((sess.endsAt - now) / (sess.prepaidMinutes * 60_000)) * 100)) : null;
+
+  return (
+    <button className="tile" data-state={state} aria-pressed={selected} onClick={onClick}>
+      <div className="tile-head">
+        <span className="tile-name">{station.name}</span>
+        <KindIcon kind={station.kind} className="tile-kind" />
+      </div>
+      <div className="tile-time">
+        {clockInfo ? (
+          <>
+            {duration(clockInfo.ms)}
+            {sess && sess.players > 1 && <small>{sess.players}P</small>}
+          </>
+        ) : (
+          <span aria-hidden="true">&nbsp;</span>
+        )}
+      </div>
+      <div className="tile-foot">
+        <span className="tile-state">{t(`state.${state}`)}</span>
+        {owed > 0 && <span className="tile-amount">{money(owed, base)}</span>}
+      </div>
+      {progress !== null && <span className="tile-progress" style={{ width: `${progress}%` }} />}
+    </button>
+  );
+}
