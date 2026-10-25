@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>KrakenHubClient</AssemblyName>
+    <RootNamespace>KrakenHub.Client</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>Kraken Hub Client</Product>
+    <Company>Kraken Hub</Company>
+    <!-- One self-contained exe: nothing else to install on the customer PC. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
+  </ItemGroup>
+
+</Project>

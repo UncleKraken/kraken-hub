@@ -1,0 +1,31 @@
+<Window x:Class="KrakenHub.Client.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Kraken Hub"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="#101B24">
+    <Grid>
+        <wv2:WebView2 x:Name="Web" Visibility="Collapsed" />
+
+        <!-- Shown until the counter's page loads, and whenever the counter can't be reached. -->
+        <Grid x:Name="Overlay" Background="#101B24">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="480">
+                <TextBlock Text="Kraken Hub" FontSize="44" FontWeight="Bold" Foreground="#E4ECF1" HorizontalAlignment="Center" />
+                <TextBlock x:Name="Status" Text="Looking for the counter…" FontSize="20" Foreground="#A9BCCB"
+                           Margin="0,14,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                <StackPanel x:Name="Manual" Visibility="Collapsed" Margin="0,28,0,0">
+                    <TextBlock Text="Counter address (for example 192.168.1.10)" Foreground="#A9BCCB" FontSize="15" />
+                    <TextBox x:Name="HostBox" FontSize="20" Padding="10,8" Margin="0,8,0,0" />
+                    <TextBlock Text="Admin code" Foreground="#A9BCCB" FontSize="15" Margin="0,14,0,0" />
+                    <PasswordBox x:Name="CodeBox" FontSize="20" Padding="10,8" Margin="0,8,0,0" />
+                    <Button x:Name="ConnectButton" Content="Connect" FontSize="18" Padding="14,10" Margin="0,16,0,0" Click="Connect_Click" />
+                    <TextBlock x:Name="ManualError" Foreground="#F07A5F" FontSize="15" Margin="0,10,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,48 @@
+name: Windows client
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - '.github/workflows/client.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build KrakenHubClient.exe
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish single-file exe
+        run: >
+          bash scripts/ci-run.sh dotnet publish client/KrakenHub.Client/KrakenHub.Client.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -o out
+      - name: Check the exe exists
+        run: ls -la out && test -f out/KrakenHubClient.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KrakenHubClient
+          path: out/KrakenHubClient.exe
+      # A stable download link for the latest client:
+      # https://github.com/UncleKraken/kraken-hub/releases/download/client-latest/KrakenHubClient.exe
+      - name: Publish to the client-latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f client-latest
+          git push -f origin client-latest
+          gh release view client-latest >/dev/null 2>&1 || gh release create client-latest --prerelease --title "Kraken Hub client (latest build)" --notes "Built automatically from main. Run KrakenHubClient.exe on each customer PC."
+          gh release upload client-latest out/KrakenHubClient.exe --clobber
