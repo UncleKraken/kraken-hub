@@ -8,6 +8,7 @@ import { adminCommands, needsSetup, runSetup, SetupInput } from './commands/admi
 import { bookingCommands, expireNoShows } from './commands/bookings.js';
 import { CommandBus, CommandEnvelope } from './commands/bus.js';
 import { inventoryCommands } from './commands/inventory.js';
+import { memberCommands } from './commands/members.js';
 import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
 import { tabCommands } from './commands/tabs.js';
@@ -17,7 +18,7 @@ import { AgentHub, PairInput } from './devices/hub.js';
 import type { ShiftRow } from './domain/venue.js';
 import { readSettings } from './domain/venue.js';
 import { AppError, forbidden, notFound, unauthorized } from './errors.js';
-import { adminLists, auditPage, currentShift, floorState, inventoryView, tabDetail } from './queries.js';
+import { adminLists, auditPage, currentShift, floorState, inventoryView, memberDetail, searchMembers, tabDetail } from './queries.js';
 
 export interface ServerOptions {
   db: DB;
@@ -51,7 +52,7 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   const { db } = opts;
   const clock = opts.clock ?? Date.now;
   const hub = new AgentHub(db, clock);
-  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...bookingCommands, ...inventoryCommands, ...deviceCommands(hub));
+  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...bookingCommands, ...inventoryCommands, ...memberCommands, ...deviceCommands(hub));
   hub.attach(bus);
   const limiter = new LoginLimiter();
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024 });
@@ -246,6 +247,19 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   app.get('/api/inventory', async (req) => {
     requireActor(req);
     return inventoryView(db);
+  });
+
+  // Members: search and detail, for both roles.
+  app.get('/api/members', async (req) => {
+    requireActor(req);
+    return searchMembers(db, (req.query as { q?: string }).q ?? '');
+  });
+
+  app.get('/api/members/:id', async (req) => {
+    requireActor(req);
+    const m = memberDetail(db, (req.params as { id: string }).id);
+    if (!m) throw notFound('member');
+    return m;
   });
 
   // Booking history for the manager: everything from the last day onward, any status.

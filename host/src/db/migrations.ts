@@ -336,4 +336,37 @@ export const migrations: string[] = [
   );
   CREATE INDEX restock_items_by_order ON restock_items(order_id);
   `,
+
+  // 5 — Members and loyalty points. Guest stays the default; a member is attached to a tab.
+  `
+  CREATE TABLE members (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    code TEXT UNIQUE COLLATE NOCASE,              -- short membership/card code, optional
+    points INTEGER NOT NULL DEFAULT 0,            -- cached running total
+    notes TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id)
+  );
+  CREATE INDEX members_by_name ON members(name);
+
+  -- Append-only log of every points change.
+  CREATE TABLE point_movements (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL REFERENCES members(id),
+    delta INTEGER NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('earn', 'redeem', 'adjust')),
+    ref_id TEXT,
+    note TEXT,
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX points_by_member ON point_movements(member_id, created_at);
+  CREATE TRIGGER points_no_update BEFORE UPDATE ON point_movements BEGIN SELECT RAISE(ABORT, 'point movements are append-only'); END;
+  CREATE TRIGGER points_no_delete BEFORE DELETE ON point_movements BEGIN SELECT RAISE(ABORT, 'point movements are append-only'); END;
+
+  ALTER TABLE tabs ADD COLUMN member_id TEXT REFERENCES members(id);
+  `,
 ];

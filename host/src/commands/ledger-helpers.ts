@@ -50,5 +50,5 @@ export function openTab(ctx: CommandContext, stationId: string | null, label = '
     .prepare("INSERT INTO tabs (id, station_id, label, status, opened_at, opened_by) VALUES (?, ?, ?, 'open', ?, ?)")
     .run(id, stationId, label, ctx.now, ctx.actor.id);
   ctx.audit({ action: 'tab.open', entity: 'tab', entityId: id, after: { stationId, label } });
-  return { id, station_id: stationId, label, status: 'open', opened_at: ctx.now, opened_by: ctx.actor.id, closed_at: null, closed_by: null };
+  return { id, station_id: stationId, label, status: 'open', opened_at: ctx.now, opened_by: ctx.actor.id, closed_at: null, closed_by: null, member_id: null };
 }

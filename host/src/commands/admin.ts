@@ -193,6 +193,8 @@ export const updateSettings = defineCommand({
     blindCount: z.boolean().optional(),
     reservedHoldMinutes: z.number().int().min(0).max(120).optional(),
     noShowGraceMinutes: z.number().int().min(0).max(120).optional(),
+    pointsPer100: z.number().int().min(0).max(1000).optional(),
+    redeemValueMinor: z.number().int().min(0).max(100000).optional(),
   }),
   handler(ctx, p) {
     const before = readSettings(ctx.db);
@@ -205,6 +207,8 @@ export const updateSettings = defineCommand({
       blind_count: p.blindCount === undefined ? undefined : p.blindCount ? '1' : '0',
       reserved_hold_minutes: p.reservedHoldMinutes?.toString(),
       no_show_grace_minutes: p.noShowGraceMinutes?.toString(),
+      points_per_100: p.pointsPer100?.toString(),
+      redeem_value_minor: p.redeemValueMinor?.toString(),
     };
     for (const [k, v] of Object.entries(map)) if (v !== undefined) setSetting(ctx.db, k, v);
     ctx.audit({ action: 'settings.update', entity: 'settings', before, after: readSettings(ctx.db) });

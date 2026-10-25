@@ -200,6 +200,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
+  member: { id: string; name: string; points: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: {
     id: string;
@@ -247,6 +248,7 @@ export function tabDetail(db: DB, tabId: string): TabDetail {
     )
     .all(tabId) as Omit<TabDetail['payments'][number], 'tenders'>[];
   const tenderStmt = db.prepare('SELECT currency, amount_minor AS amountMinor FROM payment_tenders WHERE payment_id = ?');
+  const member = tab.member_id ? (db.prepare('SELECT id, name, points FROM members WHERE id = ?').get(tab.member_id) as { id: string; name: string; points: number } | undefined) : undefined;
   return {
     id: tab.id,
     stationId: tab.station_id,
@@ -255,6 +257,7 @@ export function tabDetail(db: DB, tabId: string): TabDetail {
     status: tab.status,
     openedAt: tab.opened_at,
     closedAt: tab.closed_at,
+    member: member ?? null,
     totals: tabTotals(db, tabId),
     lines: lines.map((l) => ({ ...l, reversed: !!l.reversed })),
     payments: payments.map((p) => ({ ...p, tenders: tenderStmt.all(p.id) as { currency: string; amountMinor: number }[] })),
@@ -366,6 +369,50 @@ export function restockOrders(db: DB) {
     createdBy: (who.get(o.created_by) as { name: string } | undefined)?.name ?? '',
     items: itemStmt.all(o.id) as { id: string; productId: string; name: string; orderedQty: number; receivedQty: number | null; condition: string }[],
   }));
+}
+
+export interface MemberView {
+  id: string;
+  name: string;
+  phone: string;
+  code: string | null;
+  points: number;
+  notes: string;
+  active: boolean;
+}
+
+/** Members matching a search (name, phone or code), or the most recent if the query is blank. */
+export function searchMembers(db: DB, query: string, limit = 30): MemberView[] {
+  const q = query.trim();
+  const rows = q
+    ? (db
+        .prepare(
+          `SELECT id, name, phone, code, points, notes, active FROM members
+           WHERE active = 1 AND (name LIKE ? OR phone LIKE ? OR code = ? COLLATE NOCASE) ORDER BY name LIMIT ?`,
+        )
+        .all(`%${q}%`, `%${q}%`, q, limit) as (Omit<MemberView, 'active'> & { active: number })[])
+    : (db.prepare('SELECT id, name, phone, code, points, notes, active FROM members WHERE active = 1 ORDER BY created_at DESC LIMIT ?').all(limit) as (Omit<MemberView, 'active'> & { active: number })[]);
+  return rows.map((m) => ({ ...m, active: !!m.active }));
+}
+
+export function memberDetail(db: DB, id: string) {
+  const m = db.prepare('SELECT id, name, phone, code, points, notes, active FROM members WHERE id = ?').get(id) as (Omit<MemberView, 'active'> & { active: number }) | undefined;
+  if (!m) return null;
+  const movements = db
+    .prepare(
+      `SELECT pm.delta, pm.reason, pm.note, pm.created_at AS createdAt, u.display_name AS actorName
+       FROM point_movements pm LEFT JOIN users u ON u.id = pm.actor_id WHERE pm.member_id = ? ORDER BY pm.created_at DESC LIMIT 50`,
+    )
+    .all(id);
+  const visits = db
+    .prepare(
+      `SELECT t.id, t.opened_at AS openedAt, s.name AS stationName,
+              (SELECT COALESCE(SUM(amount_minor),0) FROM ledger WHERE tab_id = t.id) AS chargedMinor
+       FROM tabs t LEFT JOIN stations s ON s.id = t.station_id
+       WHERE t.member_id = ? ORDER BY t.opened_at DESC LIMIT 20`,
+    )
+    .all(id);
+  return { ...m, active: !!m.active, movements, visits };
 }
 
 export function auditPage(db: DB, beforeSeq: number | null, limit = 100) {

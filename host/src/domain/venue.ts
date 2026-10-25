@@ -54,6 +54,10 @@ export interface VenueSettings {
   reservedHoldMinutes: number;
   /** Minutes after a booking's start before it counts as a no-show. */
   noShowGraceMinutes: number;
+  /** Points a member earns per 100 base minor units they pay. 0 turns earning off. */
+  pointsPer100: number;
+  /** Base minor units each point is worth when redeemed. 0 turns redemption off. */
+  redeemValueMinor: number;
 }
 
 export function readSettings(db: DB): VenueSettings {
@@ -66,6 +70,8 @@ export function readSettings(db: DB): VenueSettings {
     blindCount: getSetting(db, 'blind_count') === '1',
     reservedHoldMinutes: Number(getSetting(db, 'reserved_hold_minutes') ?? '15'),
     noShowGraceMinutes: Number(getSetting(db, 'no_show_grace_minutes') ?? '15'),
+    pointsPer100: Number(getSetting(db, 'points_per_100') ?? '0'),
+    redeemValueMinor: Number(getSetting(db, 'redeem_value_minor') ?? '0'),
   };
 }
 
@@ -101,6 +107,7 @@ export interface TabRow {
   opened_by: string;
   closed_at: number | null;
   closed_by: string | null;
+  member_id: string | null;
 }
 
 export function tabOrThrow(db: DB, id: string): TabRow {

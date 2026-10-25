@@ -15,6 +15,7 @@ import { AppError, notFound } from '../errors.js';
 import { defineCommand, type CommandContext } from './bus.js';
 import { adjustStock } from './inventory.js';
 import { openTab, postLedger } from './ledger-helpers.js';
+import { addPoints, pointsForSpend } from './members.js';
 
 const both = ['operator', 'manager'] as const;
 
@@ -349,6 +350,13 @@ export const checkout = defineCommand({
         .run(ctx.id(), shift.id, p.method === 'card' ? 'card' : 'checkout', p.tipMinor, paymentId, ctx.actor.id, ctx.now);
     }
 
+    // A member attached to the tab earns points on what they actually paid (not tips).
+    let pointsEarned = 0;
+    if (tab.member_id) {
+      pointsEarned = pointsForSpend(ctx, appliedMinor);
+      if (pointsEarned > 0) addPoints(ctx, tab.member_id, pointsEarned, 'earn', { refId: paymentId });
+    }
+
     const after = tabTotals(ctx.db, tab.id);
     const closed = after.balanceMinor === 0;
     if (closed) {
@@ -360,7 +368,7 @@ export const checkout = defineCommand({
       entityId: paymentId,
       after: { tabId: tab.id, method: p.method, tenders: p.tenders, appliedMinor, tipMinor: p.tipMinor, changeMinor, closed },
     });
-    return { paymentId, appliedMinor, changeMinor, remainingMinor: after.balanceMinor, closed };
+    return { paymentId, appliedMinor, changeMinor, remainingMinor: after.balanceMinor, closed, pointsEarned };
   },
 });
 

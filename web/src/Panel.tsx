@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { Checkout } from './Checkout';
+import { MemberPicker } from './Members';
 import { clock, duration, money } from './format';
 import { t } from './i18n';
 import { pendingEstimate, sessionClock, stationState } from './stations';
@@ -87,6 +88,7 @@ export function Panel({
             <h3 className="section-title">{t('tab.title')}</h3>
             <TabLines tab={tab} base={base} state={state} now={now} />
             <Totals tab={tab} pending={pending} base={base} />
+            <MemberBar tab={tab} settings={state.settings} base={base} />
           </section>
         )}
 
@@ -378,6 +380,95 @@ function Totals({ tab, pending, base }: { tab: TabDetail; pending: number; base:
         </div>
       )}
     </div>
+  );
+}
+
+/* ---- Member on the tab ---------------------------------------------------------------- */
+
+function MemberBar({ tab, settings, base }: { tab: TabDetail; settings: FloorState['settings']; base: Currency }) {
+  const { run, toast } = useRun();
+  const [picking, setPicking] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const canRedeem = settings.redeemValueMinor > 0 && tab.member && tab.member.points > 0 && tab.totals.balanceMinor > 0;
+
+  if (!tab.member) {
+    return (
+      <div className="member-bar">
+        <button className="btn btn-quiet" onClick={() => setPicking(true)}>
+          + {t('mem.attach')}
+        </button>
+        {picking && (
+          <MemberPicker
+            onClose={() => setPicking(false)}
+            onPick={async (m) => {
+              setPicking(false);
+              await run('tab.setMember', { tabId: tab.id, memberId: m.id });
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="member-bar">
+      <div className="member-info">
+        <b>{tab.member.name}</b>
+        <small>{t('mem.points', { n: tab.member.points })}</small>
+      </div>
+      <div className="req-actions">
+        {canRedeem && (
+          <button className="btn btn-quiet" onClick={() => setRedeeming(true)}>
+            {t('mem.redeemPoints')}
+          </button>
+        )}
+        <button className="btn btn-quiet" onClick={() => void run('tab.setMember', { tabId: tab.id, memberId: null })}>
+          {t('mem.remove')}
+        </button>
+      </div>
+      {redeeming && tab.member && (
+        <RedeemDialog
+          tab={tab}
+          base={base}
+          valueMinor={settings.redeemValueMinor}
+          onClose={() => setRedeeming(false)}
+          onDone={async (pts) => {
+            const res = await run<{ discountMinor: number }>('member.redeem', { tabId: tab.id, points: pts });
+            if (res) toast(t('mem.redeem'), 'success');
+            setRedeeming(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RedeemDialog({ tab, base, valueMinor, onClose, onDone }: { tab: TabDetail; base: Currency; valueMinor: number; onClose: () => void; onDone: (points: number) => void }) {
+  const member = tab.member!;
+  // Most points that can usefully be redeemed: capped by the balance.
+  const maxByBalance = Math.ceil(tab.totals.balanceMinor / valueMinor);
+  const maxPoints = Math.min(member.points, maxByBalance);
+  const [points, setPoints] = useState(maxPoints);
+  return (
+    <Dialog title={t('mem.redeemTitle', { name: member.name })} onClose={onClose}>
+      <div className="form-grid">
+        <label className="field">
+          <span>{t('mem.redeemHow')}</span>
+          <input className="input input-money" type="number" min={1} max={maxPoints} value={points} onChange={(e) => setPoints(Math.max(1, Math.min(maxPoints, Number(e.target.value))))} autoFocus />
+        </label>
+        <p className="hint" style={{ margin: 0 }}>
+          {t('mem.redeemWorth', { points, amount: money(points * valueMinor, base) })}
+        </p>
+        <div className="dialog-actions">
+          <button className="btn btn-quiet" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn btn-primary" onClick={() => onDone(points)}>
+            {t('mem.redeemPoints')}
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

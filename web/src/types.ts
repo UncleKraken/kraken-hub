@@ -87,6 +87,8 @@ export interface Settings {
   blindCount: boolean;
   reservedHoldMinutes: number;
   noShowGraceMinutes: number;
+  pointsPer100: number;
+  redeemValueMinor: number;
 }
 
 export interface Product {
@@ -110,6 +112,21 @@ export interface FloorState {
   requests: ClientRequest[];
   bookings: Booking[];
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
+}
+
+export interface Member {
+  id: string;
+  name: string;
+  phone: string;
+  code: string | null;
+  points: number;
+  notes: string;
+  active: boolean;
+}
+
+export interface MemberDetail extends Member {
+  movements: { delta: number; reason: 'earn' | 'redeem' | 'adjust'; note: string | null; createdAt: number; actorName: string | null }[];
+  visits: { id: string; openedAt: number; stationName: string | null; chargedMinor: number }[];
 }
 
 export interface InventoryData {
@@ -150,6 +167,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
+  member: { id: string; name: string; points: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: TabLine[];
   payments: {

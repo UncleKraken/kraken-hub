@@ -1010,6 +1010,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
   const [tipRule, setTipRule] = useState(s.tipSplitRule);
   const [reservedHold, setReservedHold] = useState(s.reservedHoldMinutes);
   const [noShowGrace, setNoShowGrace] = useState(s.noShowGraceMinutes);
+  const [pointsPer100, setPointsPer100] = useState(s.pointsPer100);
+  const [redeemValue, setRedeemValue] = useState(s.redeemValueMinor);
 
   return (
     <>
@@ -1028,6 +1030,8 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
             tipSplitRule: tipRule,
             reservedHoldMinutes: reservedHold,
             noShowGraceMinutes: noShowGrace,
+            pointsPer100,
+            redeemValueMinor: redeemValue,
           });
           if (ok && language !== s.defaultLanguage) setLang(language);
         }}
@@ -1098,6 +1102,16 @@ function Venue({ data, reload }: { data: AdminLists; reload: () => Promise<unkno
             ))}
           </select>
           <small className="hint">{t('venue.noShowGraceHint')}</small>
+        </label>
+        <label className="field">
+          <span>{t('venue.pointsPer100')}</span>
+          <input className="input" type="number" min={0} value={pointsPer100} onChange={(e) => setPointsPer100(Math.max(0, Number(e.target.value)))} />
+          <small className="hint">{t('venue.pointsPer100Hint')}</small>
+        </label>
+        <label className="field">
+          <span>{t('venue.redeemValue')}</span>
+          <MoneyInput currency={base} label={t('venue.redeemValue')} value={redeemValue} onChange={setRedeemValue} />
+          <small className="hint">{t('venue.redeemValueHint')}</small>
         </label>
         <div>
           <button className="btn btn-primary">{t('common.save')}</button>

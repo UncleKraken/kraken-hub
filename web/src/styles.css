@@ -107,6 +107,10 @@ button { cursor: pointer; }
 .offline-banner { background: var(--ending); color: #2a0e07; text-align: center; padding: 6px; font-weight: 600; font-size: 14px; }
 .count-pill { margin-left: 8px; min-width: 20px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--paused); color: var(--deep); font-size: 12px; font-weight: 700; }
 .count-pill.warn { background: var(--ending); }
+.member-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.member-info { display: grid; }
+.member-info b { font-weight: 600; }
+.member-info small { color: var(--ink-3); }
 
 .workspace { display: grid; grid-template-columns: 1fr; min-height: 0; }
 .workspace.with-panel { grid-template-columns: 1fr minmax(380px, 440px); }

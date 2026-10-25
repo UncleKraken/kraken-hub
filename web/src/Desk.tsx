@@ -4,6 +4,7 @@ import { LangSwitch } from './Auth';
 import { Bookings } from './Bookings';
 import { Floor, type Selection } from './Floor';
 import { Inventory } from './Inventory';
+import { Members } from './Members';
 import { clock } from './format';
 import { setLang, t, useLang } from './i18n';
 import { Panel } from './Panel';
@@ -42,6 +43,7 @@ function TopBar({
   bookingCount,
   onInventory,
   lowStockCount,
+  onMembers,
   onEndShift,
   onSignOut,
   settingsOpen,
@@ -52,6 +54,7 @@ function TopBar({
   bookingCount?: number;
   onInventory?: () => void;
   lowStockCount?: number;
+  onMembers?: () => void;
   onEndShift?: () => void;
   onSignOut: () => void;
   settingsOpen: boolean;
@@ -73,6 +76,11 @@ function TopBar({
         <button className="btn" onClick={onInventory}>
           {t('inv.title')}
           {lowStockCount ? <span className="count-pill warn">{lowStockCount}</span> : null}
+        </button>
+      )}
+      {onMembers && (
+        <button className="btn" onClick={onMembers}>
+          {t('mem.title')}
         </button>
       )}
       {state.me.role === 'manager' && onSettings && (
@@ -101,7 +109,7 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
   const now = floor.serverNow();
   const [selection, setSelection] = useState<Selection>(null);
   const [ending, setEnding] = useState(false);
-  const [view, setView] = useState<'floor' | 'settings' | 'bookings' | 'inventory'>('floor');
+  const [view, setView] = useState<'floor' | 'settings' | 'bookings' | 'inventory' | 'members'>('floor');
   const bookingCount = state.bookings.filter((b) => b.status === 'booked').length;
   const lowStockCount = state.lowStock.length;
   // Kept here, above the shift check: once the shift closes the desk would otherwise
@@ -150,6 +158,15 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
     );
   }
 
+  if (view === 'members' && state.shift) {
+    return (
+      <div className="shell">
+        <TopBar state={state} settingsOpen={false} onSignOut={() => void signOut()} />
+        <Members me={state.me} base={base} version={state.now} onClose={() => setView('floor')} />
+      </div>
+    );
+  }
+
   if (!state.shift)
     return (
       <StartShift
@@ -173,6 +190,7 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
         bookingCount={bookingCount}
         onInventory={() => setView('inventory')}
         lowStockCount={lowStockCount}
+        onMembers={() => setView('members')}
         onEndShift={() => setEnding(true)}
         onSignOut={() => void signOut()}
       />
