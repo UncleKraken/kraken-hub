@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api } from './api';
+import { api, getToken } from './api';
 import { clock, dateTime, money } from './format';
 import { setLang, t, useLang, type Lang } from './i18n';
 import { ShiftKV } from './Shift';
-import type { AdminLists, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
+import type { AdminData, AdminLists, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
 
-type Section = 'stations' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'shifts' | 'activity';
+type Section = 'stations' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'shifts' | 'activity' | 'data';
 const SETUP: Section[] = ['stations', 'plans', 'products', 'staff', 'currencies', 'venue'];
-const RECORDS: Section[] = ['shifts', 'activity'];
+const RECORDS: Section[] = ['shifts', 'activity', 'data'];
 const KINDS: StationKind[] = ['pc', 'console', 'sim', 'table', 'other'];
 
 /** Manager settings. Every save goes through the same command bus as the floor, so it is audited. */
@@ -55,8 +55,10 @@ export function Settings({ version, meId, onBack }: { version: number; meId: str
           <Venue data={data} reload={load} />
         ) : section === 'shifts' ? (
           <Shifts currencies={data.currencies} />
-        ) : (
+        ) : section === 'activity' ? (
           <Activity />
+        ) : (
+          <DataBackups />
         )}
       </main>
     </div>
@@ -1226,6 +1228,111 @@ function describe(e: AuditEntry): string {
     /* not JSON */
   }
   return '';
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`;
+  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
+  if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+function DataBackups() {
+  const { toast } = useRun();
+  const [data, setData] = useState<AdminData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => api.get<AdminData>('/api/admin/data').then(setData).catch(() => undefined), []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const backupNow = async () => {
+    setBusy(true);
+    try {
+      await api.post('/api/admin/backup', {});
+      toast(t('data.backedUp'), 'success');
+      void load();
+    } catch {
+      toast(t('data.backupFailed'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/backup/download', { headers: { authorization: `Bearer ${getToken() ?? ''}` } });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      a.href = url;
+      a.download = `kraken-hub-${stamp}.sqlite`;
+      a.click();
+      URL.revokeObjectURL(url);
+      void load();
+    } catch {
+      toast(t('data.downloadFailed'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ok = data?.integrity === 'ok';
+
+  return (
+    <>
+      <Head title={t('settings.data')} intro={t('data.intro')} />
+      <div className="settings-body" style={{ maxWidth: 640 }}>
+        {!data ? (
+          <p className="empty-note">{t('common.loading')}</p>
+        ) : !data.enabled ? (
+          <p className="empty-note">{t('data.disabled')}</p>
+        ) : (
+          <>
+            <div className="data-cards">
+              <div className="data-card">
+                <small>{t('data.lastBackup')}</small>
+                <b>{data.lastBackupAt ? dateTime(data.lastBackupAt) : t('data.never')}</b>
+              </div>
+              <div className={`data-card${ok ? '' : ' warn'}`}>
+                <small>{t('data.integrity')}</small>
+                <b>{ok ? t('data.healthy') : t('data.problem')}</b>
+              </div>
+              <div className="data-card">
+                <small>{t('data.kept')}</small>
+                <b>{t('data.count', { n: data.backups.length })}</b>
+              </div>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn btn-primary" disabled={busy} onClick={() => void backupNow()}>
+                {t('data.backupNow')}
+              </button>
+              <button className="btn" disabled={busy} onClick={() => void download()}>
+                {t('data.download')}
+              </button>
+            </div>
+            <p className="hint">{t('data.restoreHint')}</p>
+            {data.backups.length > 0 && (
+              <section>
+                <h3 className="section-title">{t('data.recent')}</h3>
+                <div className="list">
+                  {data.backups.slice(0, 20).map((b) => (
+                    <div key={b.name} className="activity-row">
+                      <time dateTime={new Date(b.at).toISOString()}>{dateTime(b.at)}</time>
+                      <div>{formatBytes(b.sizeBytes)}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </>
+  );
 }
 
 function Activity() {

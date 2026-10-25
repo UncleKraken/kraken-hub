@@ -351,6 +351,14 @@ button { cursor: pointer; }
 .health-sev.crit { color: var(--danger); }
 .health-sev.info { color: var(--ink-3); }
 
+/* ---- Data & backups --------------------------------------------------------------------------- */
+.data-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.data-card { display: grid; gap: 4px; padding: 14px; border-radius: var(--radius-m); background: var(--raised); border: 1px solid var(--line-soft); }
+.data-card small { color: var(--ink-3); font-size: 12px; }
+.data-card b { font-size: 18px; }
+.data-card.warn { border-color: var(--ending); }
+.data-card.warn b { color: var(--ending); }
+
 /* ---- Customer PC ----------------------------------------------------------------------------
  * The lock screen fills every monitor; the widget lives in a ~360px window in a screen corner.
  */

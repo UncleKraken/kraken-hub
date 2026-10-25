@@ -145,6 +145,14 @@ export interface Product {
   priceMinor: number;
 }
 
+export interface AdminData {
+  enabled: boolean;
+  lastBackupAt: number | null;
+  lastBackupReason: string | null;
+  integrity: string;
+  backups: { name: string; at: number; sizeBytes: number }[];
+}
+
 export interface FloorState {
   now: number;
   settings: Settings;

@@ -20,9 +20,22 @@ export interface Statement {
 export class DB {
   private readonly raw: DatabaseSync;
   private depth = 0;
+  /** The database file path, or ':memory:' for tests. */
+  readonly path: string;
 
   constructor(file: string) {
     this.raw = new DatabaseSync(file);
+    this.path = file;
+  }
+
+  /**
+   * Writes a consistent snapshot of the whole database to `file` using VACUUM INTO.
+   * Safe to run on a live, open database (including WAL mode): it captures committed state
+   * without blocking writers for long. Must not run inside a transaction.
+   */
+  backupTo(file: string): void {
+    const escaped = file.replace(/'/g, "''");
+    this.raw.exec(`VACUUM INTO '${escaped}'`);
   }
 
   prepare(sql: string): Statement {

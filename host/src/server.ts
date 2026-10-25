@@ -1,9 +1,11 @@
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 import { actorFromToken, issueToken, revokeToken, verifyPassword, type Actor } from './auth.js';
+import { backupDir, createBackup, integrityCheck, listBackups } from './backup.js';
 import { adminCommands, needsSetup, runSetup, SetupInput } from './commands/admin.js';
 import { bookingCommands, expireNoShows } from './commands/bookings.js';
 import { CommandBus, CommandEnvelope } from './commands/bus.js';
@@ -12,7 +14,7 @@ import { memberCommands } from './commands/members.js';
 import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
 import { tabCommands } from './commands/tabs.js';
-import type { DB } from './db/index.js';
+import { getSetting, setSetting, type DB } from './db/index.js';
 import { deviceCommands, expireGuestRequests } from './devices/commands.js';
 import { AgentHub, PairInput } from './devices/hub.js';
 import { TelemetryInput } from './devices/health.js';
@@ -29,6 +31,8 @@ export interface ServerOptions {
   logger?: boolean;
   /** How often to check for expired prepaid sessions. 0 disables (tests). */
   tickMs?: number;
+  /** How often to take an automatic database backup, in ms. 0 disables; default hourly. */
+  backupMs?: number;
 }
 
 const LoginInput = z.object({ username: z.string().min(1), password: z.string().min(1) });
@@ -97,6 +101,28 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   bus.onChange((info) => broadcast({ type: 'changed', command: info.type, at: clock() }));
   hub.onPresenceChange(() => broadcast({ type: 'changed', command: 'device.presence', at: clock() }));
 
+  // ---- Backups ---------------------------------------------------------------
+  // Takes a consistent snapshot of the database. Never throws: a café must keep running even if
+  // the backup disk is full. Skipped for in-memory test databases. Returns the new file or null.
+  const onDisk = db.path !== ':memory:';
+  const takeBackup = (reason: string): { name: string; at: number; sizeBytes: number } | null => {
+    if (!onDisk) return null;
+    try {
+      const info = createBackup(db, clock());
+      setSetting(db, 'last_backup_at', String(info.at));
+      setSetting(db, 'last_backup_reason', reason);
+      return info;
+    } catch (err) {
+      app.log.error({ err }, 'database backup failed');
+      return null;
+    }
+  };
+  // A fresh shift close is the natural moment the day's money is settled, so snapshot then too.
+  // Deferred off the command's transaction (VACUUM can't run inside one).
+  bus.onChange((info) => {
+    if (info.type === 'shift.close') setImmediate(() => takeBackup('shift-close'));
+  });
+
   app.get('/ws', { websocket: true }, (socket, req) => {
     const actor = actorFromToken(db, tokenOf(req), clock());
     if (!actor) {
@@ -126,8 +152,20 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     }, tickMs);
     ticker.unref();
   }
+  // Automatic rolling backups. An initial one on startup means a brand-new install is protected
+  // from its first shift; the interval keeps a rolling window through the day.
+  let backupTimer: NodeJS.Timeout | undefined;
+  const backupMs = opts.backupMs ?? 60 * 60_000;
+  if (onDisk) {
+    takeBackup('startup');
+    if (backupMs > 0) {
+      backupTimer = setInterval(() => takeBackup('scheduled'), backupMs);
+      backupTimer.unref();
+    }
+  }
   app.addHook('onClose', async () => {
     if (ticker) clearInterval(ticker);
+    if (backupTimer) clearInterval(backupTimer);
   });
 
   // ---- Public ------------------------------------------------------------------
@@ -227,6 +265,46 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   app.get('/api/admin', async (req) => {
     requireManager(req);
     return adminLists(db);
+  });
+
+  // Backup status: when the last one ran, the rolling window on disk, and a health check.
+  app.get('/api/admin/data', async (req) => {
+    requireManager(req);
+    const lastRaw = getSetting(db, 'last_backup_at');
+    return {
+      enabled: onDisk,
+      lastBackupAt: lastRaw ? Number(lastRaw) : null,
+      lastBackupReason: getSetting(db, 'last_backup_reason') ?? null,
+      integrity: onDisk ? integrityCheck(db) : 'ok',
+      backups: onDisk ? listBackups(backupDir(db.path)) : [],
+    };
+  });
+
+  // Manager takes a backup right now.
+  app.post('/api/admin/backup', async (req) => {
+    const actor = requireManager(req);
+    if (!onDisk) throw new AppError('error.backup_unavailable', 409);
+    const info = takeBackup('manual');
+    if (!info) throw new AppError('error.backup_failed', 500);
+    db.prepare("INSERT INTO audit_log (at, actor_id, action, entity, entity_id, after) VALUES (?, ?, 'data.backup', 'backup', ?, ?)").run(
+      clock(),
+      actor.id,
+      info.name,
+      JSON.stringify({ sizeBytes: info.sizeBytes }),
+    );
+    return info;
+  });
+
+  // Manager downloads a fresh snapshot (also kept in the rolling window).
+  app.get('/api/admin/backup/download', async (req, reply) => {
+    const actor = requireManager(req);
+    if (!onDisk) throw new AppError('error.backup_unavailable', 409);
+    const info = takeBackup('download');
+    if (!info) throw new AppError('error.backup_failed', 500);
+    db.prepare("INSERT INTO audit_log (at, actor_id, action, entity, entity_id) VALUES (?, ?, 'data.download', 'backup', ?)").run(clock(), actor.id, info.name);
+    reply.header('content-type', 'application/x-sqlite3');
+    reply.header('content-disposition', `attachment; filename="${basename(info.name)}"`);
+    return reply.send(createReadStream(join(backupDir(db.path), info.name)));
   });
 
   app.get('/api/shifts', async (req) => {
