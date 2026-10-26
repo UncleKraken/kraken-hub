@@ -4,6 +4,7 @@ import { openDatabase } from './db/index.js';
 import { startDiscovery } from './discovery.js';
 import { readSettings } from './domain/venue.js';
 import { buildServer } from './server.js';
+import { readSyncConfig, SyncAgent } from './sync/agent.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const dataDir = resolve(process.env.KRAKEN_DATA_DIR ?? join(here, '..', 'data'));
@@ -24,9 +25,19 @@ const discovery = startDiscovery({
   onError: (err) => app.log.warn({ err }, 'PC discovery unavailable; PCs can still be pointed at the host address'),
 });
 
+// Multi-branch: if a hub is configured, push this branch's daily rollup to it. Optional —
+// with no hub env set, nothing starts and the branch runs standalone.
+const syncConfig = readSyncConfig();
+const syncAgent = syncConfig ? new SyncAgent(db, syncConfig, Date.now, (msg, err) => app.log.warn({ err }, msg)) : null;
+if (syncAgent && syncConfig) {
+  syncAgent.start();
+  app.log.info(`Multi-branch sync on: reporting to hub at ${syncConfig.hubUrl} as "${syncConfig.branchName}"`);
+}
+
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');
   discovery.close();
+  syncAgent?.stop();
   await app.close();
   db.close();
   process.exit(0);

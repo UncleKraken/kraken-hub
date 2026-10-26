@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kraken Hub — All branches</title>
+    <style>
+      :root {
+        --deep: #101b24; --sea: #14202b; --panel: #1a2834; --raised: #223340;
+        --line-soft: #233646; --ink: #e4ecf1; --ink-2: #a9bccb; --ink-3: #6f8697;
+        --free: #4cc4a9; --ending: #f07a5f; --radius-m: 10px;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body { background: var(--sea); color: var(--ink); font: 400 15px/1.45 system-ui, sans-serif; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+      header { display: flex; align-items: baseline; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line-soft); }
+      header h1 { font-size: 20px; margin: 0; }
+      header .muted { color: var(--ink-3); font-size: 13px; }
+      main { max-width: 1000px; margin: 0 auto; padding: 20px 24px 60px; }
+      .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 999px; padding: 3px; margin-bottom: 18px; }
+      .seg button { border: 0; background: none; color: var(--ink-2); padding: 7px 16px; border-radius: 999px; font-size: 14px; }
+      .seg button[aria-pressed='true'] { background: var(--raised); color: var(--ink); font-weight: 600; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .card { background: var(--raised); border: 1px solid var(--line-soft); border-radius: var(--radius-m); padding: 14px; display: grid; gap: 4px; }
+      .card small { color: var(--ink-3); font-size: 12px; }
+      .card b { font-size: 20px; }
+      h2 { font-size: 14px; color: var(--ink-2); font-weight: 600; margin: 22px 0 10px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+      th { color: var(--ink-3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--free); margin-right: 6px; }
+      .dot.off { background: var(--ending); }
+      .bars { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding: 12px; background: var(--deep); border: 1px solid var(--line-soft); border-radius: var(--radius-m); overflow-x: auto; }
+      .bar-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 26px; height: 100%; }
+      .bar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+      .bar-fill { width: 100%; min-height: 2px; background: var(--free); border-radius: 3px 3px 0 0; }
+      .bar-col span { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+      .rank { display: grid; grid-template-columns: 1.4fr 2fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+      .rank .track { height: 8px; background: var(--line-soft); border-radius: 4px; overflow: hidden; }
+      .rank .track span { display: block; height: 100%; background: color-mix(in srgb, var(--free) 70%, var(--line-soft)); }
+      .rank .qty { color: var(--ink-3); } .rank .rev { text-align: right; min-width: 80px; }
+      .empty { color: var(--ink-3); padding: 24px 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Kraken Hub</h1>
+      <span class="muted">All branches</span>
+      <span class="muted" id="updated" style="margin-left:auto"></span>
+    </header>
+    <main>
+      <div class="seg" role="group" aria-label="Range" id="ranges">
+        <button data-days="1" aria-pressed="false">Today</button>
+        <button data-days="7" aria-pressed="true">Last 7 days</button>
+        <button data-days="30" aria-pressed="false">Last 30 days</button>
+      </div>
+      <div id="content"><p class="empty">Loading…</p></div>
+    </main>
+    <script>
+      const money = (m) => new Intl.NumberFormat().format(m) + ' L';
+      const el = (id) => document.getElementById(id);
+      let days = 7;
+
+      function dayStr(offsetDays) {
+        const d = new Date(Date.now() - offsetDays * 86400000);
+        return d.toISOString().slice(0, 10);
+      }
+
+      async function load() {
+        const from = dayStr(days - 1), to = dayStr(0);
+        el('content').innerHTML = '<p class="empty">Loading…</p>';
+        let o;
+        try {
+          o = await (await fetch(`/api/overview?from=${from}&to=${to}`)).json();
+        } catch {
+          el('content').innerHTML = '<p class="empty">Could not reach the hub.</p>';
+          return;
+        }
+        render(o);
+        el('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+      }
+
+      function render(o) {
+        const t = o.totals;
+        const peak = Math.max(1, ...o.daily.map((d) => d.revenueMinor));
+        const topQty = Math.max(1, ...o.topProducts.map((p) => p.qty));
+        const cards = [
+          ['Revenue', money(t.revenueMinor)], ['Cash', money(t.cashMinor)], ['Card', money(t.cardMinor)],
+          ['Tips', money(t.tipMinor)], ['Sessions', t.sessionCount], ['Branches', o.branches.length],
+        ];
+        const branchRows = o.branches.map((b) => `
+          <tr>
+            <td><span class="dot ${b.online ? '' : 'off'}"></span>${esc(b.name)}</td>
+            <td class="num">${money(b.revenueMinor)}</td>
+            <td class="num">${money(b.cashMinor)}</td>
+            <td class="num">${money(b.cardMinor)}</td>
+            <td class="num">${b.sessionCount}</td>
+          </tr>`).join('');
+        const bars = o.daily.length
+          ? `<div class="bars">${o.daily.map((d) => `
+              <div class="bar-col" title="${d.day}: ${money(d.revenueMinor)}">
+                <div class="bar-track"><div class="bar-fill" style="height:${Math.round((d.revenueMinor / peak) * 100)}%"></div></div>
+                <span>${d.day.slice(5)}</span>
+              </div>`).join('')}</div>`
+          : '<p class="empty">No revenue in this period.</p>';
+        const top = o.topProducts.length
+          ? o.topProducts.map((p) => `
+              <div class="rank">
+                <b>${esc(p.name)}</b>
+                <span class="track"><span style="width:${Math.round((p.qty / topQty) * 100)}%"></span></span>
+                <span class="qty">×${p.qty}</span>
+                <span class="rev">${money(p.revenueMinor)}</span>
+              </div>`).join('')
+          : '<p class="empty">No sales yet.</p>';
+
+        el('content').innerHTML = `
+          <div class="cards">${cards.map(([k, v]) => `<div class="card"><small>${k}</small><b>${v}</b></div>`).join('')}</div>
+          <h2>Revenue by day</h2>${bars}
+          <h2>By branch</h2>
+          <table><thead><tr><th>Branch</th><th class="num">Revenue</th><th class="num">Cash</th><th class="num">Card</th><th class="num">Sessions</th></tr></thead><tbody>${branchRows || ''}</tbody></table>
+          <h2>Best sellers (all branches)</h2>${top}`;
+      }
+
+      function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+      el('ranges').addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        days = Number(btn.dataset.days);
+        [...el('ranges').children].forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        load();
+      });
+
+      load();
+      setInterval(load, 60_000); // refresh every minute
+    </script>
+  </body>
+</html>

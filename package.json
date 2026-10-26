@@ -3,15 +3,18 @@
   "private": true,
   "workspaces": [
     "host",
-    "web"
+    "web",
+    "hub"
   ],
   "scripts": {
     "dev:host": "npm run dev -w host",
     "dev:web": "npm run dev -w web",
-    "build": "npm run build -w web && npm run build -w host",
+    "dev:hub": "npm run dev -w hub",
+    "build": "npm run build -w web && npm run build -w host && npm run build -w hub",
     "start": "npm run start -w host",
-    "test": "npm run test -w host",
-    "typecheck": "npm run typecheck -w host && npm run typecheck -w web",
+    "start:hub": "npm run start -w hub",
+    "test": "npm run test -w host && npm run test -w hub",
+    "typecheck": "npm run typecheck -w host && npm run typecheck -w web && npm run typecheck -w hub",
     "seed": "npm run seed -w host"
   },
   "engines": {

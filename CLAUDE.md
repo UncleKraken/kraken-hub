@@ -16,7 +16,8 @@ Read `docs/SPEC.md` before any feature work; it is the source of truth for produ
 - No feature paywalls yet; keep features separable so a Pro tier can be added later by configuration.
 
 ## Layout (planned)
-- `host/` — Node.js + TypeScript server, SQLite
+- `host/` — Node.js + TypeScript server, SQLite (one per branch)
 - `web/` — Hub Desk and Hub Manager web apps
+- `hub/` — central multi-branch reporting hub (optional; branches push daily rollups to it)
 - `client/` — C# / .NET agent for customer PCs
 - `docs/` — spec and decisions
