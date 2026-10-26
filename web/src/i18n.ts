@@ -10,6 +10,9 @@ const en = {
   'common.confirm': 'Confirm',
   'common.back': 'Back',
   'common.offline': 'Reconnecting to the host…',
+  'power.message': 'Power restored — {n} session(s) were paused during a {mins}-minute outage (no charge for that time).',
+  'power.resumeAll': 'Resume all',
+  'power.dismiss': 'Review later',
   'common.loading': 'Loading…',
 
   'setup.title': 'Set up your venue',
@@ -660,6 +663,9 @@ const sq: Record<Key, string> = {
   'common.confirm': 'Konfirmo',
   'common.back': 'Kthehu',
   'common.offline': 'Po rilidhet me serverin…',
+  'power.message': 'Energjia u rikthye — {n} seanca u ndaluan gjatë një ndërprerjeje {mins}-minutëshe (pa pagesë për atë kohë).',
+  'power.resumeAll': 'Rifillo të gjitha',
+  'power.dismiss': 'Shiko më vonë',
   'common.loading': 'Po ngarkohet…',
 
   'setup.title': 'Konfiguro lokalin',

@@ -15,6 +15,7 @@ import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
 import { tabCommands } from './commands/tabs.js';
 import { getSetting, setSetting, type DB } from './db/index.js';
+import { recordAlive, recoverOnStartup } from './recovery.js';
 import { deviceCommands, expireGuestRequests } from './devices/commands.js';
 import { AgentHub, PairInput } from './devices/hub.js';
 import { TelemetryInput } from './devices/health.js';
@@ -134,11 +135,17 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
     socket.on('close', () => sockets.delete(socket));
   });
 
+  // Power-cut / crash recovery: if the host was interrupted while sessions ran, pause them at the
+  // last heartbeat (so dead time isn't billed) and raise a banner for the operator.
+  const recovered = recoverOnStartup(db, clock());
+  if (recovered) app.log.warn({ interrupted: recovered.interrupted.length }, 'recovered from an interrupted run; sessions paused');
+
   let ticker: NodeJS.Timeout | undefined;
   const tickMs = opts.tickMs ?? 5_000;
   if (tickMs > 0) {
     ticker = setInterval(() => {
       try {
+        recordAlive(db, clock()); // heartbeat, so the next startup can tell a clean restart from an outage
         const grace = readSettings(db).noShowGraceMinutes;
         const expired = expirePrepaidSessions(db, clock()) + expireGuestRequests(db, clock()) + expireNoShows(db, clock(), grace);
         const devicesChanged = hub.tick();

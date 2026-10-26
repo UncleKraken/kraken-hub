@@ -102,6 +102,25 @@ function TopBar({
   );
 }
 
+/** Shown after the host recovered from a power cut: interrupted sessions are paused. */
+function PowerBanner({ event }: { event: NonNullable<FloorState['powerEvent']> }) {
+  const { run } = useRun();
+  const downMin = Math.max(1, Math.round((event.downUntil - event.downSince) / 60_000));
+  return (
+    <div className="power-banner">
+      <span>{t('power.message', { n: event.interrupted, mins: downMin })}</span>
+      <span className="power-actions">
+        <button className="btn btn-sm" onClick={() => void run('recovery.resumeAll', {})}>
+          {t('power.resumeAll')}
+        </button>
+        <button className="btn btn-sm btn-quiet" onClick={() => void run('recovery.dismiss', {})}>
+          {t('power.dismiss')}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>; onSignedOut: () => void }) {
   useLang();
   useTick();
@@ -204,7 +223,13 @@ function DeskInner({ floor, onSignedOut }: { floor: ReturnType<typeof useFloor>;
         onSignOut={() => void signOut()}
       />
       <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr', minHeight: 0 }}>
-        {!floor.online ? <div className="offline-banner">{t('common.offline')}</div> : <div />}
+        {state.powerEvent ? (
+          <PowerBanner event={state.powerEvent} />
+        ) : !floor.online ? (
+          <div className="offline-banner">{t('common.offline')}</div>
+        ) : (
+          <div />
+        )}
         <div className={`workspace${station || tabId ? ' with-panel' : ''}`}>
           <main className="floor">
             <Floor

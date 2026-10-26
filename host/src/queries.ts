@@ -2,6 +2,7 @@ import type { Actor } from './auth.js';
 import { suggestedFloat, summarizeShift, type ShiftSummary } from './commands/shifts.js';
 import type { DB } from './db/index.js';
 import { summarize, type DeviceEventRow, type DeviceHealthRow, type HealthSummary } from './devices/health.js';
+import { readRecoveryEvent } from './recovery.js';
 import { deviceOrThrow } from './devices/commands.js';
 import { PricePlanConfig } from './domain/pricing.js';
 import {
@@ -93,6 +94,8 @@ export interface FloorState {
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
   /** How many customer PCs have an open (unacknowledged) health alert. */
   pcAlerts: number;
+  /** Set after the host recovered from a power cut / crash with sessions paused. */
+  powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
 }
 
 /** Reads active bookings (booked or checked-in) with their stations, soonest first. */
@@ -228,6 +231,10 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
     bookings,
     lowStock: lowStock(db),
     pcAlerts: [...devices.values()].filter((d) => d.alerts.length > 0).length,
+    powerEvent: (() => {
+      const e = readRecoveryEvent(db);
+      return e ? { interrupted: e.interrupted.length, downSince: e.downSince, downUntil: e.downUntil } : null;
+    })(),
   };
 }
 

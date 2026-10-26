@@ -11,6 +11,7 @@ import {
   type SessionRow,
 } from '../domain/venue.js';
 import { AppError } from '../errors.js';
+import { clearRecoveryEvent, readRecoveryEvent } from '../recovery.js';
 import { defineCommand, type CommandContext } from './bus.js';
 import { openTab, postLedger } from './ledger-helpers.js';
 
@@ -289,4 +290,40 @@ export function expirePrepaidSessions(db: DB, now: number): number {
   return due.length;
 }
 
-export const sessionCommands = [startSession, startGroup, endGroup, extendSession, setPlayers, pauseSession, resumeSession, endSession];
+/** Resumes every session paused by power-cut recovery, then clears the recovery banner. */
+export const resumeInterrupted = defineCommand({
+  type: 'recovery.resumeAll',
+  roles: [...both],
+  schema: z.object({}),
+  handler(ctx) {
+    const event = readRecoveryEvent(ctx.db);
+    let resumed = 0;
+    if (event) {
+      for (const id of event.interrupted) {
+        const s = sessionOrThrow(ctx.db, id);
+        if (s.status !== 'paused') continue;
+        const segs = segmentsOf(ctx.db, s.id);
+        const last = segs[segs.length - 1];
+        openSegment(ctx, s.id, last?.players ?? 1, last?.rateMinorPerHour ?? 0);
+        ctx.db.prepare("UPDATE sessions SET status = 'active' WHERE id = ?").run(s.id);
+        ctx.audit({ action: 'session.resume', entity: 'session', entityId: s.id, after: { via: 'recovery' } });
+        resumed++;
+      }
+    }
+    clearRecoveryEvent(ctx.db);
+    return { resumed };
+  },
+});
+
+/** Dismisses the recovery banner, leaving the interrupted sessions paused for the operator to handle. */
+export const dismissRecovery = defineCommand({
+  type: 'recovery.dismiss',
+  roles: [...both],
+  schema: z.object({}),
+  handler(ctx) {
+    clearRecoveryEvent(ctx.db);
+    return { ok: true };
+  },
+});
+
+export const sessionCommands = [startSession, startGroup, endGroup, extendSession, setPlayers, pauseSession, resumeSession, endSession, resumeInterrupted, dismissRecovery];

@@ -183,6 +183,7 @@ export interface FloorState {
   bookings: Booking[];
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
   pcAlerts: number;
+  powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
 }
 
 export interface Member {

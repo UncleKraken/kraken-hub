@@ -4,6 +4,7 @@ import { openDatabase } from './db/index.js';
 import { startDiscovery } from './discovery.js';
 import { readSettings } from './domain/venue.js';
 import { buildServer } from './server.js';
+import { recordAlive } from './recovery.js';
 import { readSyncConfig, SyncAgent } from './sync/agent.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -36,6 +37,7 @@ if (syncAgent && syncConfig) {
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');
+  recordAlive(db, Date.now()); // a clean exit: next startup sees no gap, so no false recovery
   discovery.close();
   syncAgent?.stop();
   await app.close();

@@ -105,6 +105,10 @@ button { cursor: pointer; }
 .lang-switch button { background: none; border: 0; padding: 6px 10px; color: var(--ink-3); font-size: 13px; }
 .lang-switch button[aria-pressed='true'] { background: var(--raised); color: var(--ink); }
 .offline-banner { background: var(--ending); color: #2a0e07; text-align: center; padding: 6px; font-weight: 600; font-size: 14px; }
+.power-banner { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; background: var(--busy); color: #2a1e04; padding: 8px 14px; font-weight: 600; font-size: 14px; }
+.power-actions { display: flex; gap: 8px; }
+.power-banner .btn { background: rgba(0,0,0,0.18); border-color: rgba(0,0,0,0.25); color: #2a1e04; }
+.power-banner .btn.btn-quiet { background: transparent; }
 .count-pill { margin-left: 8px; min-width: 20px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--paused); color: var(--deep); font-size: 12px; font-weight: 700; }
 .count-pill.warn { background: var(--ending); }
 .member-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
