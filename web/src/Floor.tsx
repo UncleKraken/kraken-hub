@@ -93,6 +93,7 @@ function Tile({ station, now, fetchedAt, base, selected, onClick }: { station: S
       <div className="tile-head">
         <span className="tile-name">{station.name}</span>
         <span className="tile-head-right">
+          {station.groupId && <span className="tile-group" title={t('group.pill')}>{t('group.pill')}</span>}
           {station.device && station.device.alerts.length > 0 && (
             <span
               className="tile-alert"

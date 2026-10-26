@@ -247,6 +247,14 @@ button { cursor: pointer; }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---- Checkout --------------------------------------------------------------------------- */
+/* ---- Group sessions --------------------------------------------------------------------------- */
+.tile-group { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--paused); border: 1px solid color-mix(in srgb, var(--paused) 45%, var(--line-soft)); border-radius: 999px; padding: 1px 6px; }
+.group-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius-m); background: color-mix(in srgb, var(--paused) 10%, var(--deep)); border: 1px solid color-mix(in srgb, var(--paused) 30%, var(--line-soft)); }
+.group-pill { font-size: 12px; font-weight: 700; color: var(--paused); white-space: nowrap; }
+.group-members { color: var(--ink-2); font-size: 14px; }
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; margin: 8px 0; }
+.group-pick { padding: 10px 6px; border-radius: var(--radius-m); border: 1px solid var(--line-soft); background: var(--raised); color: var(--ink); font-weight: 600; }
+.group-pick.on { border-color: var(--free); background: color-mix(in srgb, var(--free) 16%, var(--raised)); color: var(--ink); }
 .split { display: grid; gap: 10px; }
 .split .seg { justify-self: start; }
 .split-people { display: flex; align-items: center; gap: 12px; }

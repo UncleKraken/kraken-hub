@@ -44,11 +44,11 @@ export function postLedger(ctx: CommandContext, input: LedgerInput): string {
 }
 
 /** Opens a tab for a station (or a counter tab when stationId is null). */
-export function openTab(ctx: CommandContext, stationId: string | null, label = ''): TabRow {
+export function openTab(ctx: CommandContext, stationId: string | null, label = '', groupId: string | null = null): TabRow {
   const id = ctx.id();
   ctx.db
-    .prepare("INSERT INTO tabs (id, station_id, label, status, opened_at, opened_by) VALUES (?, ?, ?, 'open', ?, ?)")
-    .run(id, stationId, label, ctx.now, ctx.actor.id);
-  ctx.audit({ action: 'tab.open', entity: 'tab', entityId: id, after: { stationId, label } });
-  return { id, station_id: stationId, label, status: 'open', opened_at: ctx.now, opened_by: ctx.actor.id, closed_at: null, closed_by: null, member_id: null };
+    .prepare("INSERT INTO tabs (id, station_id, label, status, opened_at, opened_by, group_id) VALUES (?, ?, ?, 'open', ?, ?, ?)")
+    .run(id, stationId, label, ctx.now, ctx.actor.id, groupId);
+  ctx.audit({ action: 'tab.open', entity: 'tab', entityId: id, after: { stationId, label, groupId } });
+  return { id, station_id: stationId, label, status: 'open', opened_at: ctx.now, opened_by: ctx.actor.id, closed_at: null, closed_by: null, member_id: null, group_id: groupId };
 }

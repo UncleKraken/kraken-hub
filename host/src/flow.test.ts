@@ -97,6 +97,68 @@ describe('a full operator shift', () => {
     expect(floorState(db, manager, now).suggestedFloat).toEqual({ ALL: 4000 });
   });
 
+  it('runs a group of stations on one shared tab and checks out once', () => {
+    run(operator, 'shift.open', { openingFloat: {} });
+    const pcs = ['PC-01', 'PC-02', 'PC-03'].map((n) => station(n));
+    const grp = run<{ groupId: string; tabId: string; sessionIds: string[] }>(operator, 'session.startGroup', {
+      stationIds: pcs.map((s) => s.id),
+      mode: 'postpaid',
+    });
+    expect(grp.sessionIds).toHaveLength(3);
+
+    // One shared tab (no single station), three sessions all pointing at it.
+    const groupTab = tabDetail(db, grp.tabId);
+    expect(groupTab.stationId).toBeNull();
+    const sess = db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE tab_id = ?').get(grp.tabId) as { n: number };
+    expect(sess.n).toBe(3);
+
+    // Every member station shows the same shared tab and is marked as a group.
+    for (const name of ['PC-01', 'PC-02', 'PC-03']) {
+      const st = station(name);
+      expect(st.tab?.id).toBe(grp.tabId);
+      expect(st.groupId).toBe(grp.groupId);
+      expect(st.session).not.toBeNull();
+    }
+
+    // An item ordered from any member lands on the shared tab, not a new one.
+    const coke = floorState(db, operator, now).products.find((p) => p.name === 'Coca-Cola')!;
+    run(operator, 'tab.addItem', { stationId: pcs[1]!.id, productId: coke.id, qty: 2 });
+    expect(tabDetail(db, grp.tabId).totals.chargedMinor).toBe(300);
+
+    // While any session is live, the shared tab can't be checked out.
+    now += 30 * MIN;
+    expectError(() => run(operator, 'tab.checkout', { tabId: grp.tabId, method: 'cash', tenders: [{ currency: 'ALL', amountMinor: 10000 }] }), 'error.session_running');
+
+    // Stop the whole group: each station's time posts to the shared tab and all free up.
+    run(operator, 'session.endGroup', { groupId: grp.groupId });
+    for (const name of ['PC-01', 'PC-02', 'PC-03']) {
+      const st = station(name);
+      expect(st.session).toBeNull();
+      expect(st.groupId).toBeNull();
+      expect(st.tab).toBeNull();
+    }
+    // 3 PCs × 30 min × 200/h = 300 L of time + 300 L of drinks.
+    const finalTab = tabDetail(db, grp.tabId);
+    expect(finalTab.totals.chargedMinor).toBe(300 + 300);
+
+    // The unpaid group tab appears in the counter-tabs strip for checkout.
+    expect(floorState(db, operator, now).counterTabs.some((t) => t.id === grp.tabId)).toBe(true);
+
+    const res = run<{ closed: boolean }>(operator, 'tab.checkout', { tabId: grp.tabId, method: 'cash', tenders: [{ currency: 'ALL', amountMinor: 600 }] });
+    expect(res.closed).toBe(true);
+    expect(tabDetail(db, grp.tabId).status).toBe('closed');
+  });
+
+  it('refuses to group a busy or missing station', () => {
+    run(operator, 'shift.open', { openingFloat: {} });
+    const pc1 = station('PC-01');
+    run(operator, 'session.start', { stationId: pc1.id });
+    expectError(
+      () => run(operator, 'session.startGroup', { stationIds: [pc1.id, station('PC-02').id] }),
+      'error.station_busy',
+    );
+  });
+
   it('splits a bill across several payments and closes only when fully paid', () => {
     run(operator, 'shift.open', { openingFloat: {} });
     // A counter tab with three Cokes = 450 L, to split three ways.

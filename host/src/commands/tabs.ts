@@ -7,6 +7,7 @@ import {
   readSettings,
   requireOpenShift,
   stationOrThrow,
+  tabForStation,
   tabOrThrow,
   tabTotals,
   type TabRow,
@@ -34,7 +35,8 @@ function resolveTab(ctx: CommandContext, p: { tabId?: string | undefined; statio
   if (p.tabId) return openTabOrThrow(ctx, p.tabId);
   if (p.stationId) {
     const station = stationOrThrow(ctx.db, p.stationId);
-    return openTabForStation(ctx.db, station.id) ?? openTab(ctx, station.id);
+    // A grouped station's items go on the shared group tab, not a new one.
+    return tabForStation(ctx.db, station.id) ?? openTab(ctx, station.id);
   }
   throw new AppError('error.invalid_input', 400, { detail: 'tabId or stationId required' });
 }

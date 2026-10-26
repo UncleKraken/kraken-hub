@@ -10,6 +10,7 @@ import {
   openShiftFor,
   openTabForStation,
   readSettings,
+  tabForStation,
   tabOrThrow,
   tabTotals,
   viewSession,
@@ -44,6 +45,8 @@ export interface StationView {
   } | null;
   /** The next booking that holds this station soon (within the reserved-hold window), if any. */
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
+  /** Set when this station is part of a group sharing one tab. */
+  groupId: string | null;
 }
 
 export interface BookingView {
@@ -178,7 +181,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
   }
   const stations = (db.prepare('SELECT * FROM stations WHERE active = 1 ORDER BY sort, name').all() as StationRow[]).map((s): StationView => {
     const session = liveSessionForStation(db, s.id);
-    const tab = openTabForStation(db, s.id);
+    const tab = tabForStation(db, s.id);
     return {
       id: s.id,
       name: s.name,
@@ -189,6 +192,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       plan: plans.get(s.price_plan_id)!,
       session: session ? viewSession(db, session, now) : null,
       tab: tab ? { id: tab.id, ...tabTotals(db, tab.id), lineCount: lineCount(db, tab.id) } : null,
+      groupId: session?.group_id ?? tab?.group_id ?? null,
       device: devices.get(s.id) ?? null,
       reserved: reservedByStation.get(s.id) ?? null,
     };

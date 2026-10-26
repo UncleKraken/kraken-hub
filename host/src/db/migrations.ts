@@ -415,4 +415,12 @@ export const migrations: string[] = [
       THEN RAISE(ABORT, 'device events are immutable except acknowledgement') END;
   END;
   `,
+
+  // 7 — Group sessions. Several stations started together share one tab (station_id NULL, so an
+  // unpaid group tab shows in the counter-tabs strip). Each station's session carries the group id.
+  `
+  ALTER TABLE tabs ADD COLUMN group_id TEXT;
+  ALTER TABLE sessions ADD COLUMN group_id TEXT;
+  CREATE INDEX sessions_by_group ON sessions(group_id) WHERE group_id IS NOT NULL;
+  `,
 ];

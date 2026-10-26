@@ -4,7 +4,7 @@ import type { Actor } from '../auth.js';
 import type { CommandBus } from '../commands/bus.js';
 import type { DB } from '../db/index.js';
 import { PricePlanConfig } from '../domain/pricing.js';
-import { baseCurrency, liveSessionForStation, openTabForStation, readSettings, tabTotals, viewSession, type StationRow } from '../domain/venue.js';
+import { baseCurrency, liveSessionForStation, readSettings, tabForStation, tabTotals, viewSession, type StationRow } from '../domain/venue.js';
 import { AppError } from '../errors.js';
 import { deviceOrThrow, type DeviceOutbox, type DeviceRow, type RemoteAction } from './commands.js';
 import { recordTelemetry, type Telemetry } from './health.js';
@@ -275,7 +275,7 @@ export class AgentHub implements DeviceOutbox {
         : undefined;
     const sessionRow = station ? liveSessionForStation(this.db, station.id) : undefined;
     const session = sessionRow ? viewSession(this.db, sessionRow, now) : null;
-    const tabRow = station ? openTabForStation(this.db, station.id) : undefined;
+    const tabRow = station ? tabForStation(this.db, station.id) : undefined;
     const tab = tabRow
       ? {
           balanceMinor: tabTotals(this.db, tabRow.id).balanceMinor,

@@ -44,6 +44,46 @@ function openSegment(ctx: CommandContext, sessionId: string, players: number, ra
     .run(ctx.id(), sessionId, players, rate, ctx.now);
 }
 
+/**
+ * Creates one session on `station` posting to `tab`, with its opening segment and any up-front
+ * time charge (per-session price or prepaid block). Shared by single and group starts; `groupId`
+ * ties a session to its group (null for a normal single session). Caller validates the station.
+ */
+function createSession(
+  ctx: CommandContext,
+  station: ReturnType<typeof stationOrThrow>,
+  tabId: string,
+  opts: { mode: 'prepaid' | 'postpaid'; players: number; prepaidMinutes?: number },
+  groupId: string | null,
+): string {
+  const plan = planForStation(ctx.db, station);
+  let mode = opts.mode;
+  if (plan.config.kind === 'per_session') mode = 'postpaid';
+  if (mode === 'prepaid' && !opts.prepaidMinutes) throw new AppError('error.prepaid_needs_minutes', 400);
+
+  const sessionId = ctx.id();
+  ctx.db
+    .prepare(
+      `INSERT INTO sessions (id, tab_id, station_id, mode, plan, prepaid_minutes, status, started_at, started_by, group_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+    )
+    .run(sessionId, tabId, station.id, mode, JSON.stringify(plan.config), mode === 'prepaid' ? opts.prepaidMinutes! : null, ctx.now, ctx.actor.id, groupId);
+
+  const rate = plan.config.kind === 'hourly' ? rateFor(plan.config, opts.players) : 0;
+  openSegment(ctx, sessionId, opts.players, rate);
+
+  const playersTag = opts.players > 1 ? ` · ${opts.players}P` : '';
+  if (plan.config.kind === 'per_session') {
+    postLedger(ctx, { tabId, kind: 'time', description: `${station.name} · ${plan.name}${playersTag}`, unitMinor: plan.config.priceMinor, amountMinor: plan.config.priceMinor, sessionId });
+  } else if (mode === 'prepaid') {
+    const amount = pricePrepaid(plan.config, opts.prepaidMinutes!, opts.players);
+    postLedger(ctx, { tabId, kind: 'time', description: `${station.name} · ${minutesLabel(opts.prepaidMinutes!)} prepaid${playersTag}`, unitMinor: amount, amountMinor: amount, sessionId });
+  }
+
+  ctx.audit({ action: 'session.start', entity: 'session', entityId: sessionId, after: { stationId: station.id, mode, players: opts.players, prepaidMinutes: opts.prepaidMinutes ?? null, groupId } });
+  return sessionId;
+}
+
 export const startSession = defineCommand({
   type: 'session.start',
   roles: [...both],
@@ -57,48 +97,50 @@ export const startSession = defineCommand({
     const station = stationOrThrow(ctx.db, p.stationId);
     if (station.out_of_order) throw new AppError('error.station_out_of_order', 409);
     if (liveSessionForStation(ctx.db, station.id)) throw new AppError('error.station_busy', 409);
-    const plan = planForStation(ctx.db, station);
-
-    let mode = p.mode;
-    if (plan.config.kind === 'per_session') mode = 'postpaid';
-    if (mode === 'prepaid' && !p.prepaidMinutes) throw new AppError('error.prepaid_needs_minutes', 400);
-
     const tab = openTabForStation(ctx.db, station.id) ?? openTab(ctx, station.id);
-    const sessionId = ctx.id();
-    ctx.db
-      .prepare(
-        `INSERT INTO sessions (id, tab_id, station_id, mode, plan, prepaid_minutes, status, started_at, started_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-      )
-      .run(sessionId, tab.id, station.id, mode, JSON.stringify(plan.config), mode === 'prepaid' ? p.prepaidMinutes! : null, ctx.now, ctx.actor.id);
-
-    const rate = plan.config.kind === 'hourly' ? rateFor(plan.config, p.players) : 0;
-    openSegment(ctx, sessionId, p.players, rate);
-
-    const playersTag = p.players > 1 ? ` · ${p.players}P` : '';
-    if (plan.config.kind === 'per_session') {
-      postLedger(ctx, {
-        tabId: tab.id,
-        kind: 'time',
-        description: `${station.name} · ${plan.name}${playersTag}`,
-        unitMinor: plan.config.priceMinor,
-        amountMinor: plan.config.priceMinor,
-        sessionId,
-      });
-    } else if (mode === 'prepaid') {
-      const amount = pricePrepaid(plan.config, p.prepaidMinutes!, p.players);
-      postLedger(ctx, {
-        tabId: tab.id,
-        kind: 'time',
-        description: `${station.name} · ${minutesLabel(p.prepaidMinutes!)} prepaid${playersTag}`,
-        unitMinor: amount,
-        amountMinor: amount,
-        sessionId,
-      });
-    }
-
-    ctx.audit({ action: 'session.start', entity: 'session', entityId: sessionId, after: { stationId: station.id, mode, players: p.players, prepaidMinutes: p.prepaidMinutes ?? null } });
+    const sessionId = createSession(ctx, station, tab.id, { mode: p.mode, players: p.players, prepaidMinutes: p.prepaidMinutes }, null);
     return { sessionId, tabId: tab.id };
+  },
+});
+
+/** Starts several stations on one shared tab (a party on linked PCs). Same plan/mode for all. */
+export const startGroup = defineCommand({
+  type: 'session.startGroup',
+  roles: [...both],
+  schema: z.object({
+    stationIds: z.array(z.string()).min(2).max(16),
+    mode: z.enum(['prepaid', 'postpaid']).default('postpaid'),
+    players: z.number().int().min(1).max(16).default(1),
+    prepaidMinutes: z.number().int().min(1).max(24 * 60).optional(),
+  }),
+  handler(ctx, p) {
+    const ids = [...new Set(p.stationIds)];
+    if (ids.length < 2) throw new AppError('error.invalid_input', 400, { detail: 'need at least 2 stations' });
+    const stations = ids.map((id) => stationOrThrow(ctx.db, id));
+    for (const s of stations) {
+      if (s.out_of_order) throw new AppError('error.station_out_of_order', 409);
+      if (liveSessionForStation(ctx.db, s.id)) throw new AppError('error.station_busy', 409);
+    }
+    const groupId = ctx.id();
+    // One shared tab (station_id NULL), labelled with the stations so it reads clearly if it ends
+    // up in the counter-tabs strip before being paid.
+    const tab = openTab(ctx, null, stations.map((s) => s.name).join(', '), groupId);
+    const sessionIds = stations.map((s) => createSession(ctx, s, tab.id, { mode: p.mode, players: p.players, prepaidMinutes: p.prepaidMinutes }, groupId));
+    ctx.audit({ action: 'session.startGroup', entity: 'tab', entityId: tab.id, after: { groupId, stations: stations.map((s) => s.name), mode: p.mode, players: p.players } });
+    return { groupId, tabId: tab.id, sessionIds };
+  },
+});
+
+/** Ends every live session in a group at once, posting each station's time to the shared tab. */
+export const endGroup = defineCommand({
+  type: 'session.endGroup',
+  roles: [...both],
+  schema: z.object({ groupId: z.string() }),
+  handler(ctx, p) {
+    const sessions = ctx.db.prepare("SELECT * FROM sessions WHERE group_id = ? AND status <> 'ended'").all(p.groupId) as SessionRow[];
+    if (sessions.length === 0) throw new AppError('error.session_ended', 409);
+    for (const s of sessions) finishSession(ctx, s, 'operator');
+    return { tabId: sessions[0]!.tab_id };
   },
 });
 
@@ -247,4 +289,4 @@ export function expirePrepaidSessions(db: DB, now: number): number {
   return due.length;
 }
 
-export const sessionCommands = [startSession, extendSession, setPlayers, pauseSession, resumeSession, endSession];
+export const sessionCommands = [startSession, startGroup, endGroup, extendSession, setPlayers, pauseSession, resumeSession, endSession];

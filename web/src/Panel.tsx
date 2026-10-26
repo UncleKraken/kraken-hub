@@ -52,9 +52,14 @@ export function Panel({
   const pending = station ? pendingEstimate(station, now, state.now) : 0;
   const balance = tab?.totals.balanceMinor ?? 0;
 
+  const groupId = station?.groupId ?? null;
+
   const stopAndPay = async () => {
     if (!live) return;
-    const res = await run<{ tabId: string }>('session.end', { sessionId: live.id });
+    // A grouped station stops the whole group at once; both post time to the shared tab.
+    const res = groupId
+      ? await run<{ tabId: string }>('session.endGroup', { groupId })
+      : await run<{ tabId: string }>('session.end', { sessionId: live.id });
     if (!res) return;
     // Load the tab with the time charge on it before showing the payment screen.
     const fresh = await api.get<TabDetail>(`/api/tabs/${res.tabId}`).catch(() => null);
@@ -81,8 +86,9 @@ export function Panel({
       </div>
 
       <div className="panel-body">
-        {station && !live && !station.outOfOrder && <StartOptions station={station} base={base} />}
+        {station && !live && !station.outOfOrder && <StartOptions station={station} state={state} base={base} />}
         {station && live && <LiveControls station={station} now={now} fetchedAt={state.now} base={base} />}
+        {groupId && <GroupBar state={state} groupId={groupId} stationId={station?.id} />}
         {station?.device && <DeviceBox station={station} isManager={state.me.role === 'manager'} />}
 
         {tab && (
@@ -102,7 +108,7 @@ export function Panel({
       <div className="panel-foot">
         {live ? (
           <button className="btn btn-primary btn-big btn-block" onClick={() => void stopAndPay()}>
-            {t('station.end')} · {t('tab.checkout')}
+            {groupId ? t('group.stopPay') : `${t('station.end')} · ${t('tab.checkout')}`}
           </button>
         ) : balance > 0 ? (
           <button className="btn btn-primary btn-big btn-block" onClick={() => setCheckout(true)}>
@@ -136,12 +142,13 @@ export function Panel({
 
 /* ---- Starting a session ------------------------------------------------------------ */
 
-function StartOptions({ station, base }: { station: StationView; base: Currency }) {
+function StartOptions({ station, state, base }: { station: StationView; state: FloorState; base: Currency }) {
   const { run } = useRun();
   const cfg = station.plan.config;
   const playerCounts = cfg.kind === 'hourly' ? Object.keys(cfg.rates).map(Number).sort((a, b) => a - b) : [1];
   const [players, setPlayers] = useState(playerCounts[0] ?? 1);
   const [custom, setCustom] = useState('');
+  const [grouping, setGrouping] = useState(false);
   const start = (payload: Record<string, unknown>) => run('session.start', { stationId: station.id, players, ...payload });
 
   if (cfg.kind === 'per_session') {
@@ -206,7 +213,84 @@ function StartOptions({ station, base }: { station: StationView; base: Currency 
           </button>
         </form>
       </div>
+      <button className="btn btn-quiet" style={{ justifySelf: 'start' }} onClick={() => setGrouping(true)}>
+        {t('group.start')}
+      </button>
+      {grouping && <GroupStartDialog station={station} state={state} base={base} onClose={() => setGrouping(false)} />}
     </section>
+  );
+}
+
+/** Shows which stations share this group tab, from any member's panel. */
+function GroupBar({ state, groupId, stationId }: { state: FloorState; groupId: string; stationId?: string }) {
+  const members = state.stations.filter((s) => s.groupId === groupId);
+  if (members.length === 0) return null;
+  return (
+    <div className="group-bar">
+      <span className="group-pill">{t('group.badge', { n: members.length })}</span>
+      <span className="group-members">{members.map((m) => (m.id === stationId ? `[${m.name}]` : m.name)).join(' · ')}</span>
+    </div>
+  );
+}
+
+/** Picks the stations to link into one group tab and starts them together. */
+function GroupStartDialog({ station, state, onClose }: { station: StationView; state: FloorState; base: Currency; onClose: () => void }) {
+  const { run, toast } = useRun();
+  const free = state.stations.filter((s) => !s.session && !s.tab && !s.outOfOrder);
+  const [selected, setSelected] = useState<Set<string>>(new Set([station.id]));
+  const [mode, setMode] = useState<'open' | number>('open');
+  const [busy, setBusy] = useState(false);
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const ids = [...selected];
+  const canStart = ids.length >= 2 && !busy;
+
+  const startGroup = async () => {
+    setBusy(true);
+    const payload = mode === 'open' ? { mode: 'postpaid' } : { mode: 'prepaid', prepaidMinutes: mode };
+    const res = await run('session.startGroup', { stationIds: ids, ...payload });
+    setBusy(false);
+    if (res) {
+      toast(t('group.started', { n: ids.length }), 'success');
+      onClose();
+    }
+  };
+
+  return (
+    <Dialog title={t('group.title')} onClose={onClose}>
+      <p className="hint">{t('group.intro')}</p>
+      <div className="group-grid">
+        {free.map((s) => (
+          <button key={s.id} type="button" className={`group-pick${selected.has(s.id) ? ' on' : ''}`} aria-pressed={selected.has(s.id)} onClick={() => toggle(s.id)}>
+            {s.name}
+          </button>
+        ))}
+      </div>
+      <h3 className="section-title">{t('group.time')}</h3>
+      <div className="btn-grid">
+        <button type="button" className={`start-option${mode === 'open' ? ' primary' : ''}`} onClick={() => setMode('open')}>
+          <b>{t('station.openTime')}</b>
+        </button>
+        {PREPAID_PRESETS.map((m) => (
+          <button type="button" key={m} className={`start-option${mode === m ? ' primary' : ''}`} onClick={() => setMode(m)}>
+            <b>{m >= 60 ? `${m / 60}h` : `${m} ${t('station.minutes')}`}</b>
+          </button>
+        ))}
+      </div>
+      <div className="dialog-actions">
+        <button className="btn btn-quiet" onClick={onClose}>
+          {t('common.cancel')}
+        </button>
+        <button className="btn btn-primary" disabled={!canStart} onClick={() => void startGroup()}>
+          {t('group.startN', { n: ids.length })}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 

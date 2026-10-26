@@ -114,6 +114,7 @@ export interface TabRow {
   closed_at: number | null;
   closed_by: string | null;
   member_id: string | null;
+  group_id: string | null;
 }
 
 export function tabOrThrow(db: DB, id: string): TabRow {
@@ -124,6 +125,21 @@ export function tabOrThrow(db: DB, id: string): TabRow {
 
 export function openTabForStation(db: DB, stationId: string): TabRow | undefined {
   return db.prepare("SELECT * FROM tabs WHERE station_id = ? AND status = 'open'").get(stationId) as TabRow | undefined;
+}
+
+/** The open group tab a station is part of, via its live session. Undefined once its session ends. */
+export function groupTabForStation(db: DB, stationId: string): TabRow | undefined {
+  return db
+    .prepare(
+      `SELECT t.* FROM tabs t JOIN sessions s ON s.tab_id = t.id
+       WHERE s.station_id = ? AND s.status <> 'ended' AND t.status = 'open' AND t.group_id IS NOT NULL LIMIT 1`,
+    )
+    .get(stationId) as TabRow | undefined;
+}
+
+/** The tab shown for a station: its own open tab, or the group tab it's currently part of. */
+export function tabForStation(db: DB, stationId: string): TabRow | undefined {
+  return openTabForStation(db, stationId) ?? groupTabForStation(db, stationId);
 }
 
 /** Charged (ledger), paid (payments applied) and balance, all in base minor units. */
@@ -172,6 +188,7 @@ export interface SessionRow {
   ended_at: number | null;
   ended_by: string | null;
   end_reason: string | null;
+  group_id: string | null;
 }
 
 export function sessionOrThrow(db: DB, id: string): SessionRow {

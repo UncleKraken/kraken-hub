@@ -59,6 +59,7 @@ export interface StationView {
     alerts: string[];
   } | null;
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
+  groupId: string | null;
 }
 
 export interface HealthSummary {
