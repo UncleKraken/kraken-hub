@@ -97,6 +97,43 @@ describe('a full operator shift', () => {
     expect(floorState(db, manager, now).suggestedFloat).toEqual({ ALL: 4000 });
   });
 
+  it('splits a bill across several payments and closes only when fully paid', () => {
+    run(operator, 'shift.open', { openingFloat: {} });
+    // A counter tab with three Cokes = 450 L, to split three ways.
+    const { tabId } = run<{ tabId: string }>(operator, 'tab.openCounter', {});
+    const coke = floorState(db, operator, now).products.find((p) => p.name === 'Coca-Cola')!;
+    run(operator, 'tab.addItem', { tabId, productId: coke.id, qty: 3 });
+    expect(tabDetail(db, tabId).totals.balanceMinor).toBe(450);
+
+    // First person pays 150 L: the tab stays open with 300 L left.
+    const p1 = run<{ remainingMinor: number; closed: boolean }>(operator, 'tab.checkout', {
+      tabId,
+      method: 'cash',
+      tenders: [{ currency: 'ALL', amountMinor: 150 }],
+      applyMinor: 150,
+    });
+    expect(p1).toMatchObject({ remainingMinor: 300, closed: false });
+    expect(tabDetail(db, tabId).status).toBe('open');
+
+    // Second person pays 150 L by card.
+    const p2 = run<{ remainingMinor: number; closed: boolean }>(operator, 'tab.checkout', {
+      tabId,
+      method: 'card',
+      tenders: [{ currency: 'ALL', amountMinor: 150 }],
+      applyMinor: 150,
+    });
+    expect(p2).toMatchObject({ remainingMinor: 150, closed: false });
+
+    // Last person settles the rest (no applyMinor): the tab closes.
+    const p3 = run<{ remainingMinor: number; closed: boolean }>(operator, 'tab.checkout', { tabId, method: 'cash', tenders: [{ currency: 'ALL', amountMinor: 150 }] });
+    expect(p3).toMatchObject({ remainingMinor: 0, closed: true });
+    expect(tabDetail(db, tabId).status).toBe('closed');
+
+    // Three separate payments were recorded, summing to the whole bill.
+    const paid = db.prepare('SELECT COUNT(*) AS n, SUM(applied_minor) AS total FROM payments WHERE tab_id = ?').get(tabId) as { n: number; total: number };
+    expect(paid).toEqual({ n: 3, total: 450 });
+  });
+
   it('treats a marked surplus as tips and reports the rest as over/short', () => {
     run(operator, 'shift.open', { openingFloat: { ALL: 1000 } });
     const report = run<{ tips: { markedMinor: number }; closing: { overShort: Record<string, number> } }>(operator, 'shift.close', {

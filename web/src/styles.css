@@ -247,6 +247,11 @@ button { cursor: pointer; }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---- Checkout --------------------------------------------------------------------------- */
+.split { display: grid; gap: 10px; }
+.split .seg { justify-self: start; }
+.split-people { display: flex; align-items: center; gap: 12px; }
+.split-people > span { color: var(--ink-2); font-size: 14px; }
+.split-people .count-stepper { width: 140px; }
 .pay-due { display: grid; gap: 2px; }
 .pay-due b { font-family: var(--font-narrow); font-size: 48px; line-height: 1; font-weight: 700; }
 .pay-due small { color: var(--ink-2); }

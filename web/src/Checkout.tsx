@@ -34,6 +34,11 @@ export function Checkout({
   const [keepChange, setKeepChange] = useState(false);
   const [cardTip, setCardTip] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Split-bill state. `remaining` is the live balance left to pay; it drops as parts are settled.
+  const [remaining, setRemaining] = useState(balanceMinor);
+  const [split, setSplit] = useState<'full' | 'equal' | 'amount'>('full');
+  const [partsLeft, setPartsLeft] = useState(2); // people still to pay, in an equal split
+  const [amountInput, setAmountInput] = useState(0);
   const [printReceipt, setPrintReceipt] = useState(() => {
     try {
       return localStorage.getItem(PRINT_PREF) === '1';
@@ -43,18 +48,36 @@ export function Checkout({
   });
 
   const unit = settings.cashRoundingMinor;
-  const due = method === 'cash' ? roundToUnit(balanceMinor, unit) : balanceMinor;
+  // What this payment covers: the whole remaining balance, an equal share, or a typed amount.
+  const target =
+    split === 'equal'
+      ? partsLeft <= 1
+        ? remaining
+        : Math.min(remaining, Math.max(unit, roundToUnit(Math.round(remaining / partsLeft), unit)))
+      : split === 'amount'
+        ? Math.min(remaining, Math.max(0, amountInput))
+        : remaining;
+  const settlingAll = target >= remaining;
+  const due = settlingAll && method === 'cash' ? roundToUnit(remaining, unit) : target;
+
   const tenderedBase = useMemo(
     () => currencies.reduce((sum, c) => sum + toBase(tendered[c.code] ?? 0, c, base), 0),
     [tendered, currencies, base],
   );
   const raw = tenderedBase - due;
-  const tip = method === 'card' ? cardTip : keepChange ? Math.max(0, raw) : 0;
+  const tip = method === 'card' ? cardTip : keepChange && settlingAll ? Math.max(0, raw) : 0;
   const change = method === 'cash' ? Math.max(0, floorToUnit(raw - tip, unit)) : 0;
   const missing = method === 'cash' ? Math.max(0, due - tenderedBase) : 0;
-  const canPay = method === 'card' ? due > 0 : tenderedBase >= due && due > 0;
+  const canPay = (method === 'card' ? due > 0 : tenderedBase >= due && due > 0) && (split !== 'amount' || target > 0);
 
   const add = (code: string, minor: number) => setTendered((tt) => ({ ...tt, [code]: (tt[code] ?? 0) + minor }));
+
+  const resetTenders = () => {
+    setTendered({});
+    setKeepChange(false);
+    setCardTip(0);
+    setAmountInput(0);
+  };
 
   const pay = async () => {
     setBusy(true);
@@ -64,14 +87,27 @@ export function Checkout({
         : Object.entries(tendered)
             .filter(([, v]) => v > 0)
             .map(([currency, amountMinor]) => ({ currency, amountMinor }));
-    const res = await run<{ changeMinor: number }>('tab.checkout', { tabId, method, tenders, tipMinor: tip });
+    const res = await run<{ changeMinor: number; remainingMinor: number; closed: boolean }>('tab.checkout', {
+      tabId,
+      method,
+      tenders,
+      tipMinor: tip,
+      ...(settlingAll ? {} : { applyMinor: due }),
+    });
     setBusy(false);
-    if (res) {
-      toast(res.changeMinor > 0 ? t('checkout.giveChange', { amount: money(res.changeMinor, base) }) : t('checkout.done'), 'success');
+    if (!res) return;
+    if (res.changeMinor > 0) toast(t('checkout.giveChange', { amount: money(res.changeMinor, base) }), 'success');
+    if (res.closed) {
       // The receipt is shown above the floor (not here), so it survives this panel closing.
       if (printReceipt) onReceipt?.(tabId);
       onPaid();
+      return;
     }
+    // A split part was paid; keep the dialog open for the next one.
+    setRemaining(res.remainingMinor);
+    if (split === 'equal') setPartsLeft((n) => Math.max(1, n - 1));
+    resetTenders();
+    toast(t('checkout.partPaid', { amount: money(res.remainingMinor, base) }), 'success');
   };
 
   const togglePrint = (on: boolean) => {
@@ -96,10 +132,38 @@ export function Checkout({
         </button>
       </div>
 
+      <div className="split">
+        <div className="seg" role="group" aria-label={t('checkout.split')}>
+          {(['full', 'equal', 'amount'] as const).map((s) => (
+            <button key={s} aria-pressed={split === s} onClick={() => { setSplit(s); resetTenders(); }}>
+              {t(`checkout.split.${s}`)}
+            </button>
+          ))}
+        </div>
+        {split === 'equal' && (
+          <div className="split-people">
+            <span>{t('checkout.people')}</span>
+            <div className="count-stepper">
+              <button type="button" className="btn" onClick={() => setPartsLeft((n) => Math.max(1, n - 1))} aria-label={`${t('checkout.people')} −`}>−</button>
+              <input className="input" inputMode="numeric" aria-label={t('checkout.people')} value={partsLeft} onChange={(e) => setPartsLeft(Math.max(1, Math.min(12, Number(e.target.value.replace(/\D/g, '')) || 1)))} />
+              <button type="button" className="btn" onClick={() => setPartsLeft((n) => Math.min(12, n + 1))} aria-label={`${t('checkout.people')} +`}>+</button>
+            </div>
+          </div>
+        )}
+        {split === 'amount' && (
+          <label className="field">
+            <span>{t('checkout.thisPart')}</span>
+            <MoneyInput currency={base} label={t('checkout.thisPart')} value={amountInput} onChange={setAmountInput} />
+          </label>
+        )}
+      </div>
+
       <div className="pay-due">
-        <small>{t('checkout.due')}</small>
+        <small>{settlingAll ? t('checkout.due') : t('checkout.partDue')}</small>
         <b>{money(due, base)}</b>
-        {due !== balanceMinor && <small>{t('checkout.rounded', { amount: money(balanceMinor, base) })}</small>}
+        {settlingAll && due !== remaining && <small>{t('checkout.rounded', { amount: money(remaining, base) })}</small>}
+        {!settlingAll && <small>{t('checkout.remainingAfter', { amount: money(remaining - due, base) })}</small>}
+        {settlingAll && remaining !== balanceMinor && <small>{t('checkout.lastPart')}</small>}
         {method === 'cash' &&
           foreign.map((c) => (
             <span className="alt" key={c.code}>
@@ -142,7 +206,7 @@ export function Checkout({
             <span>{missing > 0 ? t('checkout.missing') : t('checkout.change')}</span>
             <b>{money(missing > 0 ? missing : change, base)}</b>
           </div>
-          {raw > 0 && (
+          {raw > 0 && settlingAll && (
             <label className="check">
               <input type="checkbox" checked={keepChange} onChange={(e) => setKeepChange(e.target.checked)} />
               {t('checkout.keepChange')}
@@ -174,7 +238,7 @@ export function Checkout({
           {t('common.cancel')}
         </button>
         <button className="btn btn-primary btn-big" disabled={!canPay || busy} onClick={() => void pay()}>
-          {method === 'cash' ? t('checkout.confirmCash') : t('checkout.confirmCard')}
+          {!settlingAll ? t('checkout.payPart') : method === 'cash' ? t('checkout.confirmCash') : t('checkout.confirmCard')}
         </button>
       </div>
     </Dialog>
