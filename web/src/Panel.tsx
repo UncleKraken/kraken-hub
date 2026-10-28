@@ -87,7 +87,7 @@ export function Panel({
 
       <div className="panel-body">
         {station && !live && !station.outOfOrder && <StartOptions station={station} state={state} base={base} />}
-        {station && live && <LiveControls station={station} now={now} fetchedAt={state.now} base={base} />}
+        {station && live && <LiveControls station={station} state={state} now={now} fetchedAt={state.now} base={base} />}
         {groupId && <GroupBar state={state} groupId={groupId} stationId={station?.id} />}
         {station?.device && <DeviceBox station={station} isManager={state.me.role === 'manager'} />}
 
@@ -296,12 +296,13 @@ function GroupStartDialog({ station, state, onClose }: { station: StationView; s
 
 /* ---- A running session -------------------------------------------------------------- */
 
-function LiveControls({ station, now, fetchedAt, base }: { station: StationView; now: number; fetchedAt: number; base: Currency }) {
+function LiveControls({ station, state, now, fetchedAt, base }: { station: StationView; state: FloorState; now: number; fetchedAt: number; base: Currency }) {
   const { run } = useRun();
   const sess = station.session!;
   const info = sessionClock(station, now, fetchedAt)!;
   const cfg = station.plan.config;
   const playerCounts = cfg.kind === 'hourly' ? Object.keys(cfg.rates).map(Number).sort((a, b) => a - b) : [];
+  const [moving, setMoving] = useState(false);
 
   return (
     <section className="live">
@@ -353,10 +354,52 @@ function LiveControls({ station, now, fetchedAt, base }: { station: StationView;
         </div>
       )}
 
-      <button className="btn btn-danger" onClick={() => void run('session.end', { sessionId: sess.id })}>
-        {t('station.end')}
-      </button>
+      <div className="row" style={{ gap: 8 }}>
+        {!station.groupId && (
+          <button className="btn" onClick={() => setMoving(true)}>
+            {t('station.moveSession')}
+          </button>
+        )}
+        <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => void run('session.end', { sessionId: sess.id })}>
+          {t('station.end')}
+        </button>
+      </div>
+      {moving && <MoveSessionDialog station={station} state={state} onClose={() => setMoving(false)} />}
     </section>
+  );
+}
+
+/** Picks a free station to move a live session to (when a PC freezes or dies). */
+function MoveSessionDialog({ station, state, onClose }: { station: StationView; state: FloorState; onClose: () => void }) {
+  const { run, toast } = useRun();
+  const free = state.stations.filter((s) => s.id !== station.id && !s.session && !s.tab && !s.outOfOrder && !s.groupId);
+  const move = async (to: StationView) => {
+    const r = await run('session.move', { sessionId: station.session!.id, toStationId: to.id });
+    if (r) {
+      toast(t('station.moved', { name: to.name }), 'success');
+      onClose();
+    }
+  };
+  return (
+    <Dialog title={t('station.moveTitle', { name: station.name })} onClose={onClose}>
+      <p className="hint">{t('station.moveHint')}</p>
+      {free.length === 0 ? (
+        <p className="empty-note">{t('station.moveNone')}</p>
+      ) : (
+        <div className="station-pick">
+          {free.map((s) => (
+            <button key={s.id} type="button" className="pick" onClick={() => void move(s)}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="dialog-actions">
+        <button className="btn btn-quiet" onClick={onClose}>
+          {t('common.cancel')}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 

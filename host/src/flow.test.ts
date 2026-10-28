@@ -149,6 +149,41 @@ describe('a full operator shift', () => {
     expect(tabDetail(db, grp.tabId).status).toBe('closed');
   });
 
+  it('moves a live session to another station, keeping its time and tab', () => {
+    run(operator, 'shift.open', { openingFloat: {} });
+    const from = station('PC-01');
+    const { sessionId, tabId } = run<{ sessionId: string; tabId: string }>(operator, 'session.start', { stationId: from.id, mode: 'postpaid' });
+    const coke = floorState(db, operator, now).products.find((p) => p.name === 'Coca-Cola')!;
+    run(operator, 'tab.addItem', { stationId: from.id, productId: coke.id });
+    now += 20 * MIN;
+
+    const to = station('PC-05');
+    run(operator, 'session.move', { sessionId, toStationId: to.id });
+
+    // The session, its running clock and its tab are now on PC-05; PC-01 is free.
+    expect(station('PC-01').session).toBeNull();
+    expect(station('PC-01').tab).toBeNull();
+    const moved = station('PC-05');
+    expect(moved.session?.id).toBe(sessionId);
+    expect(moved.tab?.id).toBe(tabId);
+    expect(moved.tab?.chargedMinor).toBe(150); // the Coke followed; time still accruing
+
+    // Ending on the new station bills the whole 20 minutes once, no double charge.
+    now += 10 * MIN;
+    run(operator, 'session.end', { sessionId });
+    const tab = tabDetail(db, tabId);
+    const timeLines = tab.lines.filter((l) => l.kind === 'time');
+    expect(timeLines).toHaveLength(1);
+    expect(tab.totals.chargedMinor).toBe(150 + 100); // 150 drink + 30 min × 200/h = 100
+  });
+
+  it('refuses to move onto a busy station', () => {
+    run(operator, 'shift.open', { openingFloat: {} });
+    const a = run<{ sessionId: string }>(operator, 'session.start', { stationId: station('PC-01').id });
+    run(operator, 'session.start', { stationId: station('PC-02').id });
+    expectError(() => run(operator, 'session.move', { sessionId: a.sessionId, toStationId: station('PC-02').id }), 'error.station_busy');
+  });
+
   it('refuses to group a busy or missing station', () => {
     run(operator, 'shift.open', { openingFloat: {} });
     const pc1 = station('PC-01');

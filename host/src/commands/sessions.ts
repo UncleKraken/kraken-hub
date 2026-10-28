@@ -290,6 +290,31 @@ export function expirePrepaidSessions(db: DB, now: number): number {
   return due.length;
 }
 
+/**
+ * Moves a live session (and its tab) to another station, keeping its time and plan — the one-tap
+ * fix when a PC freezes or dies and the customer carries on at a working one. No re-charge: the
+ * accrued time and the original rate follow the session. Group sessions are moved as a whole only
+ * by ending them, so a single member can't be split off here.
+ */
+export const moveSession = defineCommand({
+  type: 'session.move',
+  roles: [...both],
+  schema: z.object({ sessionId: z.string(), toStationId: z.string() }),
+  handler(ctx, p) {
+    const s = liveOrThrow(ctx.db, p.sessionId);
+    if (s.group_id) throw new AppError('error.group_move', 409);
+    const target = stationOrThrow(ctx.db, p.toStationId);
+    if (target.id === s.station_id) return { ok: true, tabId: s.tab_id };
+    if (target.out_of_order) throw new AppError('error.station_out_of_order', 409);
+    if (liveSessionForStation(ctx.db, target.id)) throw new AppError('error.station_busy', 409);
+    if (openTabForStation(ctx.db, target.id)) throw new AppError('error.station_has_tab', 409);
+    ctx.db.prepare('UPDATE sessions SET station_id = ? WHERE id = ?').run(target.id, s.id);
+    ctx.db.prepare('UPDATE tabs SET station_id = ? WHERE id = ?').run(target.id, s.tab_id);
+    ctx.audit({ action: 'session.move', entity: 'session', entityId: s.id, before: { stationId: s.station_id }, after: { stationId: target.id } });
+    return { ok: true, tabId: s.tab_id, toStationId: target.id };
+  },
+});
+
 /** Resumes every session paused by power-cut recovery, then clears the recovery banner. */
 export const resumeInterrupted = defineCommand({
   type: 'recovery.resumeAll',
@@ -326,4 +351,4 @@ export const dismissRecovery = defineCommand({
   },
 });
 
-export const sessionCommands = [startSession, startGroup, endGroup, extendSession, setPlayers, pauseSession, resumeSession, endSession, resumeInterrupted, dismissRecovery];
+export const sessionCommands = [startSession, startGroup, endGroup, moveSession, extendSession, setPlayers, pauseSession, resumeSession, endSession, resumeInterrupted, dismissRecovery];
