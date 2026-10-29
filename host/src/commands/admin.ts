@@ -4,7 +4,7 @@ import { hashPassword } from '../auth.js';
 import type { DB } from '../db/index.js';
 import { setSetting } from '../db/index.js';
 import { PricePlanConfig } from '../domain/pricing.js';
-import { readSettings, stationOrThrow } from '../domain/venue.js';
+import { FLOOR_CANVAS, readSettings, stationOrThrow, STATION_SHAPES } from '../domain/venue.js';
 import { AppError, notFound } from '../errors.js';
 import { defineCommand, type CommandContext } from './bus.js';
 import { adjustStock } from './inventory.js';
@@ -274,7 +274,68 @@ export const quickSetup = defineCommand({
   },
 });
 
-export const adminCommands = [upsertPlan, upsertStation, setOutOfOrder, upsertProduct, upsertCurrency, upsertUser, updateSettings, quickSetup];
+/**
+ * Saves the floor map in one go: each station's position + shape (written to stations.layout) and
+ * the cosmetic décor areas + canvas size (written to the 'floor_plan' setting). Lets the manager
+ * lay the room out so it mirrors the real venue — a round pool table where the pool table is, a
+ * long bench where the consoles sit — instead of a grid of identical numbered cards. Unknown or
+ * archived station ids are skipped so a stale editor can't fail the whole save.
+ */
+export const saveFloorLayout = defineCommand({
+  type: 'admin.floor.layout',
+  roles: [...managers],
+  schema: z.object({
+    canvas: z.object({ w: z.number().positive().max(5000), h: z.number().positive().max(5000) }).optional(),
+    stations: z
+      .array(
+        z.object({
+          id: z.string(),
+          x: z.number().min(-5000).max(5000),
+          y: z.number().min(-5000).max(5000),
+          shape: z.enum(STATION_SHAPES),
+          w: z.number().positive().max(2000).optional(),
+          h: z.number().positive().max(2000).optional(),
+        }),
+      )
+      .max(512)
+      .default([]),
+    areas: z
+      .array(
+        z.object({
+          id: z.string().max(40),
+          x: z.number().min(-5000).max(5000),
+          y: z.number().min(-5000).max(5000),
+          w: z.number().positive().max(5000),
+          h: z.number().positive().max(5000),
+          label: z.string().trim().max(40).default(''),
+          color: z.string().max(20).optional(),
+        }),
+      )
+      .max(64)
+      .default([]),
+  }),
+  handler(ctx, p) {
+    const canvas = p.canvas ?? { w: FLOOR_CANVAS.w, h: FLOOR_CANVAS.h };
+    // The editor sends the authoritative set of placed stations, so clear every placement first;
+    // a station left out of the list is one the manager took off the map.
+    ctx.db.prepare('UPDATE stations SET layout = NULL WHERE active = 1 AND layout IS NOT NULL').run();
+    const write = ctx.db.prepare('UPDATE stations SET layout = ? WHERE id = ? AND active = 1');
+    let placed = 0;
+    for (const s of p.stations) {
+      const layout: Record<string, number | string> = { x: Math.round(s.x), y: Math.round(s.y), shape: s.shape };
+      if (s.w) layout.w = Math.round(s.w);
+      if (s.h) layout.h = Math.round(s.h);
+      const r = write.run(JSON.stringify(layout), s.id);
+      if (r.changes > 0) placed++;
+    }
+    const plan = { w: Math.round(canvas.w), h: Math.round(canvas.h), areas: p.areas };
+    setSetting(ctx.db, 'floor_plan', JSON.stringify(plan));
+    ctx.audit({ action: 'floor.layout', entity: 'floor_plan', after: { stations: placed, areas: p.areas.length } });
+    return { placed, areas: p.areas.length };
+  },
+});
+
+export const adminCommands = [upsertPlan, upsertStation, setOutOfOrder, upsertProduct, upsertCurrency, upsertUser, updateSettings, quickSetup, saveFloorLayout];
 
 /** True until the first manager account exists. */
 export function needsSetup(db: DB): boolean {

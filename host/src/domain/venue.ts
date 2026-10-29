@@ -159,6 +159,71 @@ export interface StationRow {
   sort: number;
   out_of_order: number;
   active: number;
+  layout: string | null;
+}
+
+/** The silhouettes a station can be drawn as on the floor map. */
+export const STATION_SHAPES = ['desk', 'seat', 'sofa', 'round', 'rect', 'counter', 'plain'] as const;
+export type StationShape = (typeof STATION_SHAPES)[number];
+
+/** Where and how a station sits on the floor map. Coordinates are in design units (see FLOOR_CANVAS). */
+export interface StationLayout {
+  x: number;
+  y: number;
+  shape: StationShape;
+  /** Optional size override in design units; the client falls back to a per-shape default. */
+  w?: number;
+  h?: number;
+}
+
+/** A labelled, purely-cosmetic region behind the stations (a room, the bar, "VIP corner"). */
+export interface FloorArea {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  /** One of a small named palette; the client maps it to a colour. */
+  color?: string;
+}
+
+/** The design-unit canvas the floor map is laid out on; the client scales it to fit. */
+export const FLOOR_CANVAS = { w: 1000, h: 680 } as const;
+
+export interface FloorPlan {
+  w: number;
+  h: number;
+  areas: FloorArea[];
+}
+
+/** Décor areas + canvas size for the map, from the 'floor_plan' setting. Stations carry their own layout. */
+export function readFloorPlan(db: DB): FloorPlan {
+  const raw = getSetting(db, 'floor_plan');
+  if (!raw) return { w: FLOOR_CANVAS.w, h: FLOOR_CANVAS.h, areas: [] };
+  try {
+    const p = JSON.parse(raw) as Partial<FloorPlan>;
+    return {
+      w: typeof p.w === 'number' && p.w > 0 ? p.w : FLOOR_CANVAS.w,
+      h: typeof p.h === 'number' && p.h > 0 ? p.h : FLOOR_CANVAS.h,
+      areas: Array.isArray(p.areas) ? p.areas : [],
+    };
+  } catch {
+    return { w: FLOOR_CANVAS.w, h: FLOOR_CANVAS.h, areas: [] };
+  }
+}
+
+/** Parse a station's stored layout JSON, or null if unplaced / unreadable. */
+export function parseLayout(raw: string | null): StationLayout | null {
+  if (!raw) return null;
+  try {
+    const l = JSON.parse(raw) as Partial<StationLayout>;
+    if (typeof l.x !== 'number' || typeof l.y !== 'number') return null;
+    const shape = (STATION_SHAPES as readonly string[]).includes(l.shape as string) ? (l.shape as StationShape) : 'plain';
+    return { x: l.x, y: l.y, shape, ...(typeof l.w === 'number' ? { w: l.w } : {}), ...(typeof l.h === 'number' ? { h: l.h } : {}) };
+  } catch {
+    return null;
+  }
 }
 
 export function stationOrThrow(db: DB, id: string): StationRow {

@@ -482,3 +482,101 @@ button { cursor: pointer; }
   .dialog { position: absolute; left: 0; top: 0; width: 80mm; border: 0; background: #fff; max-height: none; animation: none; padding: 0; }
   .no-print { display: none !important; }
 }
+
+/* ---- Floor map (spatial plan) --------------------------------------------------------- */
+.floor-views { display: inline-flex; gap: 2px; margin: 0 0 12px; padding: 3px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 999px; }
+.floor-views button { border: 0; background: transparent; color: var(--ink-2); padding: 5px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+.floor-views button[aria-selected='true'] { background: var(--raised); color: var(--ink); }
+
+.plan-wrap { position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--radius-m); background: var(--deep); }
+.plan-canvas {
+  position: relative; transform-origin: top left;
+  background-image: linear-gradient(var(--line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 40px 40px; background-color: #0d1720;
+}
+.plan-canvas.plan-canvas-edit { background-color: #0e1a24; }
+
+.plan-node {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 4px; overflow: hidden; text-align: center; color: var(--ink);
+  border: 1.5px solid color-mix(in srgb, var(--state, var(--idle)) 45%, var(--line-soft));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--state, var(--idle)) 20%, var(--panel)), var(--panel) 75%);
+  border-radius: 8px;
+}
+.plan-node[data-state='free'] { --state: var(--free); }
+.plan-node[data-state='busy'] { --state: var(--busy); }
+.plan-node[data-state='ending'] { --state: var(--ending); }
+.plan-node[data-state='paused'] { --state: var(--paused); }
+.plan-node[data-state='unpaid'] { --state: var(--busy); border-style: dashed; }
+.plan-node[data-state='reserved'] { --state: var(--paused); border-style: dashed; }
+.plan-node[data-state='outOfOrder'] { --state: var(--idle); background: repeating-linear-gradient(-45deg, var(--panel) 0 8px, #1e2d39 8px 16px); }
+.plan-node-top { display: flex; align-items: center; gap: 3px; line-height: 1; }
+.plan-node-kind { width: 16px; height: 16px; color: color-mix(in srgb, var(--state, var(--idle)) 70%, var(--ink)); }
+.plan-node-name { font-weight: 700; font-size: 14px; line-height: 1.05; max-width: 100%; }
+.plan-node-status { font-family: var(--font-narrow); font-size: 13px; color: var(--ink-2); line-height: 1; }
+.plan-node[data-state='free'] .plan-node-status { color: var(--ink-3); }
+.plan-node-group { font-size: 9px; font-weight: 800; letter-spacing: .04em; padding: 1px 3px; border-radius: 3px; background: var(--paused); color: var(--deep); }
+.plan-node-alert { color: var(--ending); font-size: 12px; }
+
+/* Shapes: silhouettes that read as what the station physically is. */
+.shape-desk { border-radius: 7px; border-top-width: 4px; }
+.shape-seat { border-radius: 16px; }
+.shape-sofa { border-radius: 30px / 22px; }
+.shape-round { border-radius: 50%; }
+.shape-rect { border-radius: 6px; }
+.shape-counter { border-radius: 6px; flex-direction: row; gap: 6px; }
+.shape-counter .plan-node-status { display: none; }
+.shape-plain { border-radius: 8px; }
+
+/* Décor areas behind the stations. */
+.plan-area { position: absolute; border-radius: 10px; border: 1.5px dashed; z-index: 0; }
+.plan-area-label { position: absolute; left: 8px; top: 6px; font-weight: 700; font-size: 13px; letter-spacing: .02em; opacity: .9; }
+.plan-node, .plan-node.editable { z-index: 1; }
+.area-slate { background: color-mix(in srgb, #6f8697 12%, transparent); border-color: color-mix(in srgb, #6f8697 55%, transparent); color: #b7c6d2; }
+.area-teal { background: color-mix(in srgb, var(--free) 12%, transparent); border-color: color-mix(in srgb, var(--free) 55%, transparent); color: var(--free); }
+.area-violet { background: color-mix(in srgb, var(--paused) 12%, transparent); border-color: color-mix(in srgb, var(--paused) 55%, transparent); color: var(--paused); }
+.area-amber { background: color-mix(in srgb, var(--busy) 12%, transparent); border-color: color-mix(in srgb, var(--busy) 55%, transparent); color: var(--busy); }
+.area-rose { background: color-mix(in srgb, var(--ending) 12%, transparent); border-color: color-mix(in srgb, var(--ending) 55%, transparent); color: var(--ending); }
+.area-blue { background: color-mix(in srgb, #5aa6e0 14%, transparent); border-color: color-mix(in srgb, #5aa6e0 55%, transparent); color: #7cbcec; }
+
+/* Tray of stations not yet on the map, plus the operator-view overflow. */
+.plan-tray { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.plan-tray-label { color: var(--ink-3); font-size: 13px; margin-right: 4px; }
+.plan-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--raised); color: var(--ink); font-weight: 600;
+}
+.plan-chip[data-state='free'] { border-color: color-mix(in srgb, var(--free) 45%, var(--line)); }
+.plan-chip[data-state='busy'], .plan-chip[data-state='unpaid'] { border-color: color-mix(in srgb, var(--busy) 50%, var(--line)); }
+.plan-chip[data-state='ending'] { border-color: color-mix(in srgb, var(--ending) 55%, var(--line)); }
+.plan-chip[aria-pressed='true'] { background: var(--free); border-color: var(--free); color: #08201b; }
+.plan-chip-kind { width: 16px; height: 16px; color: var(--ink-2); }
+
+/* Editor-only chrome. */
+.plan-editor { display: flex; flex-direction: column; gap: 10px; }
+.plan-editor-bar { display: flex; align-items: center; gap: 10px; }
+.plan-editor-bar .spacer { flex: 1; }
+.plan-editor-hint { color: var(--ink-3); font-size: 13px; margin: 0; }
+.plan-dirty { color: var(--busy); font-size: 13px; font-weight: 600; }
+.plan-wrap-edit { touch-action: none; }
+.plan-node.editable { cursor: grab; user-select: none; touch-action: none; }
+.plan-node.editable:active { cursor: grabbing; }
+.plan-area { touch-action: none; }
+.plan-canvas-edit .plan-area { cursor: grab; }
+.plan-node.sel, .plan-area.sel { outline: 2px solid var(--free); outline-offset: 2px; }
+.plan-area-resize { position: absolute; right: -6px; bottom: -6px; width: 16px; height: 16px; border-radius: 4px; background: var(--free); border: 2px solid var(--deep); cursor: nwse-resize; }
+
+.plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius-m); }
+.plan-tools-title { font-weight: 600; color: var(--ink-2); }
+.plan-shapes { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-shape-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-s); border: 1px solid var(--line); background: var(--raised); color: var(--ink-2); font-size: 13px; }
+.plan-shape-btn.on { border-color: var(--free); color: var(--ink); }
+.shape-swatch { width: 20px; height: 15px; background: var(--raised); border: 1.5px solid var(--ink-3); display: inline-block; }
+.shape-swatch.shape-round { width: 16px; height: 16px; }
+.shape-swatch.shape-counter { height: 7px; width: 22px; }
+.plan-area-name { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.plan-area-name input { background: var(--deep); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 6px 8px; color: var(--ink); }
+.plan-colors { display: flex; gap: 6px; }
+.plan-color { width: 26px; height: 26px; border-radius: 6px; border: 2px solid transparent; }
+.plan-color.on { border-color: var(--ink); }
+.btn-quiet.danger { color: var(--danger); }

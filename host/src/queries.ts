@@ -10,13 +10,17 @@ import {
   liveSessionForStation,
   openShiftFor,
   openTabForStation,
+  parseLayout,
+  readFloorPlan,
   readSettings,
   tabForStation,
   tabOrThrow,
   tabTotals,
   viewSession,
   type CurrencyRow,
+  type FloorPlan,
   type LiveSessionView,
+  type StationLayout,
   type StationRow,
   type VenueSettings,
 } from './domain/venue.js';
@@ -48,6 +52,8 @@ export interface StationView {
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
   /** Set when this station is part of a group sharing one tab. */
   groupId: string | null;
+  /** Where/how this station is drawn on the floor map, or null if not placed yet. */
+  layout: StationLayout | null;
 }
 
 export interface BookingView {
@@ -96,6 +102,8 @@ export interface FloorState {
   pcAlerts: number;
   /** Set after the host recovered from a power cut / crash with sessions paused. */
   powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
+  /** Décor areas + canvas size for the spatial floor map; station positions live on each station. */
+  floorPlan: FloorPlan;
 }
 
 /** Reads active bookings (booked or checked-in) with their stations, soonest first. */
@@ -198,6 +206,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       groupId: session?.group_id ?? tab?.group_id ?? null,
       device: devices.get(s.id) ?? null,
       reserved: reservedByStation.get(s.id) ?? null,
+      layout: parseLayout(s.layout),
     };
   });
   const counterTabs = (db.prepare("SELECT id, label, opened_at FROM tabs WHERE status = 'open' AND station_id IS NULL ORDER BY opened_at").all() as {
@@ -235,6 +244,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       const e = readRecoveryEvent(db);
       return e ? { interrupted: e.interrupted.length, downSince: e.downSince, downUntil: e.downUntil } : null;
     })(),
+    floorPlan: readFloorPlan(db),
   };
 }
 

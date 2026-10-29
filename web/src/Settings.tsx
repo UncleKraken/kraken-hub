@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { api, getToken } from './api';
 import { clock, dateTime, money } from './format';
 import { setLang, t, useLang, type Lang } from './i18n';
+import { FloorPlanEditor } from './FloorEditor';
 import { ShiftKV } from './Shift';
 import type { AdminData, AdminLists, AdminReport, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
 
-type Section = 'stations' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'reports' | 'shifts' | 'activity' | 'data';
-const SETUP: Section[] = ['stations', 'plans', 'products', 'staff', 'currencies', 'venue'];
+type Section = 'stations' | 'floorplan' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'reports' | 'shifts' | 'activity' | 'data';
+const SETUP: Section[] = ['stations', 'floorplan', 'plans', 'products', 'staff', 'currencies', 'venue'];
 const RECORDS: Section[] = ['reports', 'shifts', 'activity', 'data'];
 const KINDS: StationKind[] = ['pc', 'console', 'sim', 'table', 'other'];
 
@@ -43,6 +44,8 @@ export function Settings({ version, meId, onBack }: { version: number; meId: str
           <p className="empty-note">{t('common.loading')}</p>
         ) : section === 'stations' ? (
           <Stations data={data} reload={load} />
+        ) : section === 'floorplan' ? (
+          <FloorPlanSection />
         ) : section === 'plans' ? (
           <Plans data={data} reload={load} />
         ) : section === 'products' ? (
@@ -107,6 +110,15 @@ const baseOf = (data: AdminLists) => data.currencies.find((c) => c.isBase)!;
 /* ---- Stations --------------------------------------------------------------------------- */
 
 type StationRow = AdminLists['stations'][number];
+
+function FloorPlanSection() {
+  return (
+    <>
+      <Head title={t('settings.floorplan')} intro={t('plan.intro')} />
+      <FloorPlanEditor />
+    </>
+  );
+}
 
 function Stations({ data, reload }: { data: AdminLists; reload: () => Promise<unknown> }) {
   const save = useSave(reload);

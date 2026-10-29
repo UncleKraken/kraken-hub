@@ -60,6 +60,35 @@ export interface StationView {
   } | null;
   reserved: { bookingId: string; customerName: string; startsAt: number } | null;
   groupId: string | null;
+  layout: StationLayout | null;
+}
+
+export type StationShape = 'desk' | 'seat' | 'sofa' | 'round' | 'rect' | 'counter' | 'plain';
+
+/** Where/how a station sits on the floor map, in design units (see FLOOR_CANVAS in shapes.tsx). */
+export interface StationLayout {
+  x: number;
+  y: number;
+  shape: StationShape;
+  w?: number;
+  h?: number;
+}
+
+/** A labelled cosmetic region drawn behind the stations (a room, the bar, a VIP corner). */
+export interface FloorArea {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  color?: string;
+}
+
+export interface FloorPlan {
+  w: number;
+  h: number;
+  areas: FloorArea[];
 }
 
 export interface HealthSummary {
@@ -184,6 +213,7 @@ export interface FloorState {
   lowStock: { id: string; name: string; stockQty: number; minQty: number }[];
   pcAlerts: number;
   powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
+  floorPlan: FloorPlan;
 }
 
 export interface Member {

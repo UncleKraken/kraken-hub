@@ -423,4 +423,12 @@ export const migrations: string[] = [
   ALTER TABLE sessions ADD COLUMN group_id TEXT;
   CREATE INDEX sessions_by_group ON sessions(group_id) WHERE group_id IS NOT NULL;
   `,
+
+  // 8 — Floor plan. A station can carry an optional layout {x,y,shape,w,h} so it is drawn as a
+  // recognisable shape at its real place on a 2-D map of the room, instead of a numbered card.
+  // Décor areas (labelled rooms/zones/bar) live in the 'floor_plan' setting, not here, because
+  // they reference no station and are purely cosmetic. NULL layout = station not placed yet.
+  `
+  ALTER TABLE stations ADD COLUMN layout TEXT;
+  `,
 ];

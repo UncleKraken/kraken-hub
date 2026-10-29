@@ -40,6 +40,7 @@ Kraken Hub already runs a café end to end. This is built and working, not plann
 - Prepaid, open-time (postpaid) and per-game pricing; player-count rates for consoles, changeable mid-session
 - **Group sessions** — link several stations onto one shared tab for a party
 - **Move a live session** to another station in one tap when a PC freezes (time and rate carry over, no re-charge)
+- **Floor map** — lay the room out as it really is: drag each station to its place, give it a shape that looks like the real thing (PC desk, round pool table, console sofa, long table), and draw labelled areas (VIP room, the bar). Operators recognise a station by where it is and what it looks like, not by a number — and switch back to the list view any time
 
 **Money — append-only and operator-proof**
 - A tab per station: time, drinks, snacks; move, merge, and **split bills** equally or by amount
@@ -126,7 +127,7 @@ A solid first version for the pilot is the goal, and reliability beats feature c
 | --- | --- | --- |
 | 1 · Host & Hub Desk | Nov 2026 | ✅ Floor, sessions, tabs, POS, checkout, currencies, shifts, tips, ledger, roles |
 | 2 · Hub Client | Dec 2026 | ✅ Pairing, lock screen, guest approval, widget, remote power, setup mode *(lockdown presets & session wipe pending)* |
-| 3 · Pilot & release | Jan 2027 | 🔜 Live café pilot · bookings ✅ · inventory ✅ · health ✅ · backups ✅ · reports ✅ · multi-branch rollup ✅ |
+| 3 · Pilot & release | Jan 2027 | 🔜 Live café pilot · bookings ✅ · inventory ✅ · health ✅ · backups ✅ · reports ✅ · floor map ✅ · multi-branch rollup ✅ |
 | After release | 2027 | Shared members & catalog across branches, remote desktop, router Boost, storage modes, bundles & VIP pricing, more languages |
 
 **Pilot:** the owner's own café branch, hardware going in now.

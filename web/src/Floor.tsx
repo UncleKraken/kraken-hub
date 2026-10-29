@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { FloorPlanView } from './FloorPlan';
 import { clock, duration, money } from './format';
 import { t } from './i18n';
 import { Inbox } from './Requests';
@@ -5,6 +7,15 @@ import { KindIcon, pendingEstimate, sessionClock, stationState } from './station
 import type { Currency, FloorState, StationView } from './types';
 
 export type Selection = { kind: 'station'; id: string } | { kind: 'tab'; id: string } | null;
+
+type FloorView = 'grid' | 'plan';
+function initialView(): FloorView {
+  try {
+    return localStorage.getItem('kh.floorView') === 'plan' ? 'plan' : 'grid';
+  } catch {
+    return 'grid';
+  }
+}
 
 export function Floor({
   state,
@@ -21,11 +32,22 @@ export function Floor({
   onSelect: (s: Selection) => void;
   onNewCounterTab: () => void;
 }) {
+  const [view, setView] = useState<FloorView>(initialView);
+  const choose = (v: FloorView) => {
+    setView(v);
+    try {
+      localStorage.setItem('kh.floorView', v);
+    } catch {
+      /* private mode — not worth failing over */
+    }
+  };
+
   const zones = new Map<string, StationView[]>();
   for (const s of state.stations) {
     const z = s.zone || '';
     zones.set(z, [...(zones.get(z) ?? []), s]);
   }
+  const hasPlan = state.stations.some((s) => s.layout) || state.floorPlan.areas.length > 0;
 
   if (state.stations.length === 0)
     return (
@@ -38,7 +60,20 @@ export function Floor({
   return (
     <>
       <Inbox state={state} now={now} base={base} />
-      {[...zones.entries()].map(([zone, stations]) => (
+      {hasPlan && (
+        <div className="floor-views" role="tablist" aria-label={t('floor.view')}>
+          <button role="tab" aria-selected={view === 'grid'} onClick={() => choose('grid')}>
+            {t('floor.viewGrid')}
+          </button>
+          <button role="tab" aria-selected={view === 'plan'} onClick={() => choose('plan')}>
+            {t('floor.viewPlan')}
+          </button>
+        </div>
+      )}
+      {view === 'plan' && hasPlan ? (
+        <FloorPlanView state={state} now={now} base={base} selection={selection} onSelect={onSelect} />
+      ) : (
+        [...zones.entries()].map(([zone, stations]) => (
         <section className="zone" key={zone} aria-label={zone || undefined}>
           {zone && <h2 className="zone-title">{zone}</h2>}
           <div className="tiles">
@@ -55,7 +90,8 @@ export function Floor({
             ))}
           </div>
         </section>
-      ))}
+        ))
+      )}
 
       <section className="zone">
         <h2 className="zone-title">{t('floor.counter')}</h2>
