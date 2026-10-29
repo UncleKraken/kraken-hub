@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private string _mode = "lock";
     private bool _webReady;
     private bool _allowClose;
+    private bool _setupMode;
 
     public MainWindow(Config config, HealthReporter? reporter = null)
     {
@@ -50,7 +51,12 @@ public partial class MainWindow : Window
             Navigate();
         };
 
-        ApplyMode("lock");
+        // Until this PC has connected to a counter at least once, run in setup mode so whoever is
+        // installing it can minimize to the desktop instead of being locked behind the connect screen.
+        _setupMode = !_config.Configured;
+        if (_setupMode) EnterSetupMode();
+        else ApplyMode("lock");
+
         Loaded += async (_, _) => await StartAsync();
         Closing += OnClosing;
         SystemEventsDisplayChanged();
@@ -132,22 +138,58 @@ public partial class MainWindow : Window
     {
         if (e.IsSuccess)
         {
+            if (_setupMode) EndSetupMode(); // first successful connection: this PC is now configured
             Overlay.Visibility = Visibility.Collapsed;
             Web.Visibility = Visibility.Visible;
             return;
         }
         Log.Write($"Could not load {_config.HostUrl}: {e.WebErrorStatus}");
         ShowOverlay($"Can't reach the counter at {_config.HostUrl}. Trying again…");
+        if (_setupMode) Manual.Visibility = Visibility.Visible; // let them correct the address
         _retry.Start();
     }
 
     private void ShowOverlay(string text)
     {
-        ApplyMode("lock");
+        // In setup mode we never force the lock — whoever is installing must stay able to minimize.
+        if (!_setupMode) ApplyMode("lock");
         Status.Text = text;
         Overlay.Visibility = Visibility.Visible;
         Web.Visibility = Visibility.Collapsed;
+        if (_setupMode) SetupActions.Visibility = Visibility.Visible;
     }
+
+    /// <summary>Presents a normal, minimizable window (not the lock) while the PC is being set up.</summary>
+    private void EnterSetupMode()
+    {
+        _mode = "setup";
+        _keys.Enabled = false;
+        ShowInTaskbar = true; // so it can be restored from the taskbar after minimizing
+        Topmost = false;
+        WindowState = WindowState.Normal;
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(760, area.Width - 80);
+        Height = Math.Min(620, area.Height - 80);
+        Left = area.Left + (area.Width - Width) / 2;
+        Top = area.Top + (area.Height - Height) / 2;
+        SetupActions.Visibility = Visibility.Visible;
+        Overlay.Visibility = Visibility.Visible;
+        Web.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>First successful connection: mark the PC configured and switch to the normal lock.</summary>
+    private void EndSetupMode()
+    {
+        if (!_setupMode) return;
+        _setupMode = false;
+        _config.Configured = true;
+        _config.Save();
+        Log.Write("Client configured; locking down from now on.");
+        SetupActions.Visibility = Visibility.Collapsed;
+        ApplyMode("lock");
+    }
+
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -195,8 +237,12 @@ public partial class MainWindow : Window
 
     private void SystemEventsDisplayChanged()
     {
-        // Re-apply the layout when monitors or resolution change.
-        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(() => ApplyMode(_mode));
+        // Re-apply the layout when monitors or resolution change (but not while in setup mode, where
+        // ApplyMode would snap the window back to the lock and could undo a minimize).
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (_mode != "setup") ApplyMode(_mode);
+        });
     }
 
     private async void Connect_Click(object sender, RoutedEventArgs e)

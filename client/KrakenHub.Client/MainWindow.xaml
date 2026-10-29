@@ -25,6 +25,16 @@
                     <Button x:Name="ConnectButton" Content="Connect" FontSize="18" Padding="14,10" Margin="0,16,0,0" Click="Connect_Click" />
                     <TextBlock x:Name="ManualError" Foreground="#F07A5F" FontSize="15" Margin="0,10,0,0" TextWrapping="Wrap" />
                 </StackPanel>
+
+                <!-- Setup mode only: lets whoever installs the client reach the desktop before it's paired. -->
+                <StackPanel x:Name="SetupActions" Visibility="Collapsed" Margin="0,30,0,0">
+                    <Border Background="#1A2834" CornerRadius="10" Padding="16,12">
+                        <TextBlock Foreground="#A9BCCB" FontSize="14" TextWrapping="Wrap" TextAlignment="Center"
+                                   Text="Setting up this PC? You can minimize Kraken Hub to reach the Windows desktop and finish configuring it. It will lock automatically once it connects to the counter." />
+                    </Border>
+                    <Button x:Name="MinimizeButton" Content="Minimize to set up this PC" FontSize="16" Padding="14,10"
+                            Margin="0,14,0,0" HorizontalAlignment="Center" Click="Minimize_Click" />
+                </StackPanel>
             </StackPanel>
         </Grid>
     </Grid>

@@ -19,6 +19,14 @@ public sealed class Config
     /// <summary>Code that lets staff close the client with Ctrl+Alt+Shift+F12.</summary>
     public string AdminCode { get; set; } = "1234";
 
+    /// <summary>
+    /// True once this PC has successfully reached a counter at least once. Until then the client
+    /// runs in setup mode — minimizable, so whoever installs it can reach the desktop to configure
+    /// the PC instead of being locked behind the connect screen. After the first connection it
+    /// locks down normally (and fails closed) on every boot.
+    /// </summary>
+    public bool Configured { get; set; }
+
     public static string Version =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 

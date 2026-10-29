@@ -17,6 +17,16 @@ out restart / shut down / log off when the counter asks.
 
 The host PC must allow Node.js through Windows Firewall (TCP 7300, UDP 7301) on private networks.
 
+### Setup mode (before the first connection)
+
+Until a PC has reached the counter at least once, the client runs in **setup mode**: it does
+**not** lock the desktop. It shows the connect screen in a normal, minimizable window with a
+**"Minimize to set up this PC"** button, so whoever installs it can reach the Windows desktop to
+finish configuring the machine instead of being trapped behind the connect screen. The moment it
+connects successfully it marks the PC configured and, from then on, locks down normally on every
+boot (and fails closed if the counter is unreachable). Only a fresh, never-connected install is
+minimizable — a deployed PC is already configured, so customers can't reach setup mode.
+
 ## Staff menu
 
 Press **Ctrl + Alt + Shift + F12** on the customer PC and enter the admin code to change the
