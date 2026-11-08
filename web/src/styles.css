@@ -580,3 +580,8 @@ button { cursor: pointer; }
 .plan-color { width: 26px; height: 26px; border-radius: 6px; border: 2px solid transparent; }
 .plan-color.on { border-color: var(--ink); }
 .btn-quiet.danger { color: var(--danger); }
+
+/* ---- Bundles (prepaid packages) ------------------------------------------------------- */
+.check-row { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 4px; }
+.start-option.bundle { border-color: color-mix(in srgb, var(--free) 40%, var(--line)); }
+.start-option.bundle b { color: var(--free); }

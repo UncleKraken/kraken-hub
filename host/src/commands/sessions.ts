@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { DB } from '../db/index.js';
 import { pricePrepaid, priceTime, PricePlanConfig, rateFor } from '../domain/pricing.js';
 import {
+  bundleAppliesTo,
+  bundleOrThrow,
   liveSessionForStation,
   openTabForStation,
   planForStation,
@@ -54,7 +56,7 @@ function createSession(
   ctx: CommandContext,
   station: ReturnType<typeof stationOrThrow>,
   tabId: string,
-  opts: { mode: 'prepaid' | 'postpaid'; players: number; prepaidMinutes?: number },
+  opts: { mode: 'prepaid' | 'postpaid'; players: number; prepaidMinutes?: number; bundle?: { id: string; priceMinor: number; label: string } },
   groupId: string | null,
 ): string {
   const plan = planForStation(ctx.db, station);
@@ -65,10 +67,10 @@ function createSession(
   const sessionId = ctx.id();
   ctx.db
     .prepare(
-      `INSERT INTO sessions (id, tab_id, station_id, mode, plan, prepaid_minutes, status, started_at, started_by, group_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+      `INSERT INTO sessions (id, tab_id, station_id, mode, plan, prepaid_minutes, status, started_at, started_by, group_id, bundle_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
     )
-    .run(sessionId, tabId, station.id, mode, JSON.stringify(plan.config), mode === 'prepaid' ? opts.prepaidMinutes! : null, ctx.now, ctx.actor.id, groupId);
+    .run(sessionId, tabId, station.id, mode, JSON.stringify(plan.config), mode === 'prepaid' ? opts.prepaidMinutes! : null, ctx.now, ctx.actor.id, groupId, opts.bundle?.id ?? null);
 
   const rate = plan.config.kind === 'hourly' ? rateFor(plan.config, opts.players) : 0;
   openSegment(ctx, sessionId, opts.players, rate);
@@ -76,12 +78,15 @@ function createSession(
   const playersTag = opts.players > 1 ? ` · ${opts.players}P` : '';
   if (plan.config.kind === 'per_session') {
     postLedger(ctx, { tabId, kind: 'time', description: `${station.name} · ${plan.name}${playersTag}`, unitMinor: plan.config.priceMinor, amountMinor: plan.config.priceMinor, sessionId });
+  } else if (opts.bundle) {
+    // A bundle is a flat-priced prepaid package: charge its set price, not minutes × rate.
+    postLedger(ctx, { tabId, kind: 'time', description: `${station.name} · ${opts.bundle.label}${playersTag}`, unitMinor: opts.bundle.priceMinor, amountMinor: opts.bundle.priceMinor, sessionId });
   } else if (mode === 'prepaid') {
     const amount = pricePrepaid(plan.config, opts.prepaidMinutes!, opts.players);
     postLedger(ctx, { tabId, kind: 'time', description: `${station.name} · ${minutesLabel(opts.prepaidMinutes!)} prepaid${playersTag}`, unitMinor: amount, amountMinor: amount, sessionId });
   }
 
-  ctx.audit({ action: 'session.start', entity: 'session', entityId: sessionId, after: { stationId: station.id, mode, players: opts.players, prepaidMinutes: opts.prepaidMinutes ?? null, groupId } });
+  ctx.audit({ action: 'session.start', entity: 'session', entityId: sessionId, after: { stationId: station.id, mode, players: opts.players, prepaidMinutes: opts.prepaidMinutes ?? null, groupId, bundleId: opts.bundle?.id ?? null } });
   return sessionId;
 }
 
@@ -93,13 +98,24 @@ export const startSession = defineCommand({
     mode: z.enum(['prepaid', 'postpaid']).default('postpaid'),
     players: z.number().int().min(1).max(16).default(1),
     prepaidMinutes: z.number().int().min(1).max(24 * 60).optional(),
+    bundleId: z.string().optional(),
   }),
   handler(ctx, p) {
     const station = stationOrThrow(ctx.db, p.stationId);
     if (station.out_of_order) throw new AppError('error.station_out_of_order', 409);
     if (liveSessionForStation(ctx.db, station.id)) throw new AppError('error.station_busy', 409);
     const tab = openTabForStation(ctx.db, station.id) ?? openTab(ctx, station.id);
-    const sessionId = createSession(ctx, station, tab.id, { mode: p.mode, players: p.players, prepaidMinutes: p.prepaidMinutes }, null);
+
+    let opts: { mode: 'prepaid' | 'postpaid'; players: number; prepaidMinutes?: number; bundle?: { id: string; priceMinor: number; label: string } };
+    if (p.bundleId) {
+      const bundle = bundleOrThrow(ctx.db, p.bundleId);
+      if (!bundle.active) throw new AppError('error.bundle_inactive', 409);
+      if (!bundleAppliesTo(bundle, station.kind)) throw new AppError('error.bundle_wrong_kind', 409);
+      opts = { mode: 'prepaid', players: p.players, prepaidMinutes: bundle.minutes, bundle: { id: bundle.id, priceMinor: bundle.priceMinor, label: bundle.name } };
+    } else {
+      opts = { mode: p.mode, players: p.players, prepaidMinutes: p.prepaidMinutes };
+    }
+    const sessionId = createSession(ctx, station, tab.id, opts, null);
     return { sessionId, tabId: tab.id };
   },
 });

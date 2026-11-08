@@ -213,6 +213,25 @@ function StartOptions({ station, state, base }: { station: StationView; state: F
           </button>
         </form>
       </div>
+      {(() => {
+        const bundles = state.bundles.filter((b) => b.kinds.length === 0 || b.kinds.includes(station.kind));
+        if (bundles.length === 0) return null;
+        return (
+          <div>
+            <h3 className="section-title">{t('station.bundles')}</h3>
+            <div className="btn-grid">
+              {bundles.map((b) => (
+                <button key={b.id} className="start-option bundle" onClick={() => void start({ bundleId: b.id })}>
+                  <b>{b.name}</b>
+                  <span>
+                    {b.minutes >= 60 ? `${+(b.minutes / 60).toFixed(2)}h` : `${b.minutes} ${t('station.minutes')}`} · {money(b.priceMinor, base)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <button className="btn btn-quiet" style={{ justifySelf: 'start' }} onClick={() => setGrouping(true)}>
         {t('group.start')}
       </button>

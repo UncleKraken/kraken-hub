@@ -9,6 +9,7 @@ import {
   listCurrencies,
   liveSessionForStation,
   openShiftFor,
+  listBundles,
   openTabForStation,
   parseLayout,
   readFloorPlan,
@@ -17,6 +18,7 @@ import {
   tabOrThrow,
   tabTotals,
   viewSession,
+  type Bundle,
   type CurrencyRow,
   type FloorPlan,
   type LiveSessionView,
@@ -104,6 +106,8 @@ export interface FloorState {
   powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
   /** Décor areas + canvas size for the spatial floor map; station positions live on each station. */
   floorPlan: FloorPlan;
+  /** Active prepaid packages the operator can start with one tap, filtered to this venue. */
+  bundles: Bundle[];
 }
 
 /** Reads active bookings (booked or checked-in) with their stations, soonest first. */
@@ -245,6 +249,7 @@ export function floorState(db: DB, me: Actor, now: number, online: Set<string> =
       return e ? { interrupted: e.interrupted.length, downSince: e.downSince, downUntil: e.downUntil } : null;
     })(),
     floorPlan: readFloorPlan(db),
+    bundles: listBundles(db, { activeOnly: true }),
   };
 }
 
@@ -494,6 +499,7 @@ export function adminLists(db: DB) {
       role: string;
       active: number;
     }[]).map((u) => ({ id: u.id, username: u.username, displayName: u.display_name, role: u.role, active: !!u.active })),
+    bundles: listBundles(db),
     settings: readSettings(db),
   };
 }

@@ -431,4 +431,24 @@ export const migrations: string[] = [
   `
   ALTER TABLE stations ADD COLUMN layout TEXT;
   `,
+
+  // 9 — Bundles. Named prepaid packages ("5 hours – 800 L") the operator starts with one tap: a
+  // discount on hourly time, priced as a flat amount rather than minutes × rate. `kinds` is a JSON
+  // array of the station kinds a bundle applies to ([] = all). A session records which bundle
+  // started it so reports can credit the deal. The money model is unchanged: the bundle still posts
+  // one normal append-only `time` line at its fixed price.
+  `
+  CREATE TABLE bundles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    minutes INTEGER NOT NULL,
+    price_minor INTEGER NOT NULL,
+    kinds TEXT NOT NULL DEFAULT '[]',
+    active INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL
+  );
+  ALTER TABLE sessions ADD COLUMN bundle_id TEXT;
+  `,
 ];

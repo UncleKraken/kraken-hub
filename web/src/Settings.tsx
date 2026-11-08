@@ -7,8 +7,8 @@ import { ShiftKV } from './Shift';
 import type { AdminData, AdminLists, AdminReport, AuditEntry, Currency, PricePlanConfig, ShiftListItem, ShiftSummary, StationKind } from './types';
 import { Dialog, MoneyInput, useRun } from './ui';
 
-type Section = 'stations' | 'floorplan' | 'plans' | 'products' | 'staff' | 'currencies' | 'venue' | 'reports' | 'shifts' | 'activity' | 'data';
-const SETUP: Section[] = ['stations', 'floorplan', 'plans', 'products', 'staff', 'currencies', 'venue'];
+type Section = 'stations' | 'floorplan' | 'plans' | 'products' | 'bundles' | 'staff' | 'currencies' | 'venue' | 'reports' | 'shifts' | 'activity' | 'data';
+const SETUP: Section[] = ['stations', 'floorplan', 'plans', 'products', 'bundles', 'staff', 'currencies', 'venue'];
 const RECORDS: Section[] = ['reports', 'shifts', 'activity', 'data'];
 const KINDS: StationKind[] = ['pc', 'console', 'sim', 'table', 'other'];
 
@@ -50,6 +50,8 @@ export function Settings({ version, meId, onBack }: { version: number; meId: str
           <Plans data={data} reload={load} />
         ) : section === 'products' ? (
           <Products data={data} reload={load} />
+        ) : section === 'bundles' ? (
+          <Bundles data={data} reload={load} />
         ) : section === 'staff' ? (
           <Staff data={data} reload={load} meId={meId} />
         ) : section === 'currencies' ? (
@@ -770,6 +772,159 @@ function ProductDialog({
           {product && (
             <button type="button" className="btn btn-quiet" onClick={() => void onSave(payload(!product.active))}>
               {product.active ? t('settings.archive') : t('settings.restore')}
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          <button type="button" className="btn btn-quiet" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn btn-primary">{t('common.save')}</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/* ---- Bundles ---------------------------------------------------------------------------------- */
+
+type BundleRow = AdminLists['bundles'][number];
+const BUNDLE_KINDS: StationKind[] = ['pc', 'sim', 'console', 'table', 'other'];
+
+function bundleMinutesLabel(min: number): string {
+  if (min >= 60) {
+    const h = +(min / 60).toFixed(2);
+    return `${h}h`;
+  }
+  return `${min} ${t('station.minutes')}`;
+}
+
+function Bundles({ data, reload }: { data: AdminLists; reload: () => Promise<unknown> }) {
+  const save = useSave(reload);
+  const base = baseOf(data);
+  const [editing, setEditing] = useState<BundleRow | 'new' | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const rows = data.bundles.filter((b) => showArchived || b.active);
+
+  return (
+    <>
+      <Head
+        title={t('settings.bundles')}
+        intro={t('bundles.intro')}
+        action={
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>
+            {t('bundles.add')}
+          </button>
+        }
+      />
+      <div className="settings-body">
+        {rows.length === 0 && <p className="empty-note">{t('bundles.none')}</p>}
+        <div className="list">
+          {rows.map((b) => (
+            <div key={b.id} className={`list-row${b.active ? '' : ' is-archived'}`}>
+              <div className="list-main">
+                <b>
+                  {b.name}
+                  {!b.active && <span className="badge">{t('settings.archived')}</span>}
+                </b>
+                <small>
+                  {bundleMinutesLabel(b.minutes)} ·{' '}
+                  {b.kinds.length === 0 ? t('bundles.allKinds') : b.kinds.map((k) => t(`kind.${k}`)).join(', ')}
+                </small>
+              </div>
+              <span className="list-meta">{money(b.priceMinor, base)}</span>
+              <button className="btn btn-quiet" onClick={() => setEditing(b)}>
+                {t('settings.edit')}
+              </button>
+            </div>
+          ))}
+        </div>
+        <ArchivedToggle value={showArchived} onChange={setShowArchived} />
+      </div>
+      {editing && (
+        <BundleDialog
+          bundle={editing === 'new' ? null : editing}
+          base={base}
+          nextSort={data.bundles.length}
+          onClose={() => setEditing(null)}
+          onSave={async (payload) => {
+            if (await save('bundle.upsert', payload)) setEditing(null);
+          }}
+          onArchive={async (active) => {
+            if (editing !== 'new' && (await save('bundle.setActive', { id: editing.id, active }))) setEditing(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function BundleDialog({
+  bundle,
+  base,
+  nextSort,
+  onClose,
+  onSave,
+  onArchive,
+}: {
+  bundle: BundleRow | null;
+  base: Currency;
+  nextSort: number;
+  onClose: () => void;
+  onSave: (payload: Record<string, unknown>) => Promise<void>;
+  onArchive: (active: boolean) => Promise<void>;
+}) {
+  const [name, setName] = useState(bundle?.name ?? '');
+  const [minutes, setMinutes] = useState(bundle?.minutes ?? 60);
+  const [price, setPrice] = useState(bundle?.priceMinor ?? 0);
+  const [kinds, setKinds] = useState<StationKind[]>(bundle?.kinds ?? []);
+  const [sort, setSort] = useState(bundle?.sort ?? nextSort);
+  const toggleKind = (k: StationKind) => setKinds((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+  const payload = () => ({ id: bundle?.id, name, minutes, priceMinor: price, kinds, active: bundle?.active ?? true, sort });
+
+  return (
+    <Dialog title={bundle ? `${t('settings.edit')}: ${bundle.name}` : t('bundles.add')} onClose={onClose}>
+      <form
+        className="form-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onSave(payload());
+        }}
+      >
+        <label className="field">
+          <span>{t('settings.name')}</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} placeholder={t('bundles.namePlaceholder')} />
+        </label>
+        <div className="row">
+          <label className="field">
+            <span>{t('bundles.minutes')}</span>
+            <input className="input" type="number" min={1} value={minutes} onChange={(e) => setMinutes(Math.max(1, Number(e.target.value)))} required />
+            <small className="hint">{bundleMinutesLabel(minutes)}</small>
+          </label>
+          <label className="field">
+            <span>{t('bundles.price')}</span>
+            <MoneyInput currency={base} label={t('bundles.price')} value={price} onChange={setPrice} />
+          </label>
+        </div>
+        <div className="field">
+          <span>{t('bundles.kinds')}</span>
+          <div className="check-row">
+            {BUNDLE_KINDS.map((k) => (
+              <label key={k} className="check">
+                <input type="checkbox" checked={kinds.includes(k)} onChange={() => toggleKind(k)} />
+                {t(`kind.${k}`)}
+              </label>
+            ))}
+          </div>
+          <small className="hint">{t('bundles.kindsHint')}</small>
+        </div>
+        <label className="field">
+          <span>{t('settings.order')}</span>
+          <input className="input" type="number" value={sort} onChange={(e) => setSort(Number(e.target.value))} />
+        </label>
+        <div className="dialog-actions">
+          {bundle && (
+            <button type="button" className="btn btn-quiet" onClick={() => void onArchive(!bundle.active)}>
+              {bundle.active ? t('settings.archive') : t('settings.restore')}
             </button>
           )}
           <span style={{ flex: 1 }} />

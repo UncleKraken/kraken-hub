@@ -226,6 +226,59 @@ export function parseLayout(raw: string | null): StationLayout | null {
   }
 }
 
+export type StationKind = 'pc' | 'sim' | 'console' | 'table' | 'other';
+export const STATION_KINDS: readonly StationKind[] = ['pc', 'sim', 'console', 'table', 'other'];
+
+export interface BundleRow {
+  id: string;
+  name: string;
+  minutes: number;
+  price_minor: number;
+  kinds: string;
+  active: number;
+  sort: number;
+}
+
+/** A named prepaid package the operator can start with one tap. `kinds` empty = every station kind. */
+export interface Bundle {
+  id: string;
+  name: string;
+  minutes: number;
+  priceMinor: number;
+  kinds: StationKind[];
+  active: boolean;
+  sort: number;
+}
+
+function toBundle(r: BundleRow): Bundle {
+  let kinds: StationKind[] = [];
+  try {
+    const parsed = JSON.parse(r.kinds) as unknown;
+    if (Array.isArray(parsed)) kinds = parsed.filter((k): k is StationKind => (STATION_KINDS as readonly string[]).includes(k as string));
+  } catch {
+    kinds = [];
+  }
+  return { id: r.id, name: r.name, minutes: r.minutes, priceMinor: r.price_minor, kinds, active: r.active === 1, sort: r.sort };
+}
+
+/** All bundles (or just the active ones), ordered for display. */
+export function listBundles(db: DB, opts: { activeOnly?: boolean } = {}): Bundle[] {
+  const where = opts.activeOnly ? 'WHERE active = 1' : '';
+  const rows = db.prepare(`SELECT id, name, minutes, price_minor, kinds, active, sort FROM bundles ${where} ORDER BY sort, name`).all() as BundleRow[];
+  return rows.map(toBundle);
+}
+
+export function bundleOrThrow(db: DB, id: string): Bundle {
+  const r = db.prepare('SELECT id, name, minutes, price_minor, kinds, active, sort FROM bundles WHERE id = ?').get(id) as BundleRow | undefined;
+  if (!r) throw notFound('bundle');
+  return toBundle(r);
+}
+
+/** Whether a bundle may be used on a station of this kind ([] kinds = any). */
+export function bundleAppliesTo(b: Bundle, kind: StationKind): boolean {
+  return b.kinds.length === 0 || b.kinds.includes(kind);
+}
+
 export function stationOrThrow(db: DB, id: string): StationRow {
   const s = db.prepare('SELECT * FROM stations WHERE id = ?').get(id) as StationRow | undefined;
   if (!s || !s.active) throw notFound('station');

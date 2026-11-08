@@ -10,6 +10,7 @@ import { adminCommands, needsSetup, runSetup, SetupInput } from './commands/admi
 import { bookingCommands, expireNoShows } from './commands/bookings.js';
 import { CommandBus, CommandEnvelope } from './commands/bus.js';
 import { inventoryCommands } from './commands/inventory.js';
+import { bundleCommands } from './commands/bundles.js';
 import { memberCommands } from './commands/members.js';
 import { expirePrepaidSessions, sessionCommands } from './commands/sessions.js';
 import { shiftCommands, summarizeShift } from './commands/shifts.js';
@@ -58,7 +59,7 @@ export async function buildServer(opts: ServerOptions): Promise<{ app: FastifyIn
   const { db } = opts;
   const clock = opts.clock ?? Date.now;
   const hub = new AgentHub(db, clock);
-  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...bookingCommands, ...inventoryCommands, ...memberCommands, ...deviceCommands(hub));
+  const bus = new CommandBus(db, clock).register(...sessionCommands, ...tabCommands, ...shiftCommands, ...adminCommands, ...bookingCommands, ...inventoryCommands, ...memberCommands, ...bundleCommands, ...deviceCommands(hub));
   hub.attach(bus);
   const limiter = new LoginLimiter();
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024 });

@@ -214,6 +214,7 @@ export interface FloorState {
   pcAlerts: number;
   powerEvent: { interrupted: number; downSince: number; downUntil: number } | null;
   floorPlan: FloorPlan;
+  bundles: Bundle[];
 }
 
 export interface Member {
@@ -290,7 +291,19 @@ export interface AdminLists {
   products: { id: string; name: string; category: string; priceMinor: number; sort: number; active: boolean; trackStock: boolean; stockQty: number; minQty: number }[];
   currencies: Currency[];
   users: { id: string; username: string; displayName: string; role: Role; active: boolean }[];
+  bundles: Bundle[];
   settings: Settings;
+}
+
+/** A named prepaid package the operator starts with one tap ("5 hours – 800 L"). */
+export interface Bundle {
+  id: string;
+  name: string;
+  minutes: number;
+  priceMinor: number;
+  kinds: StationKind[];
+  active: boolean;
+  sort: number;
 }
 
 export interface ShiftListItem {
