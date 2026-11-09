@@ -451,4 +451,11 @@ export const migrations: string[] = [
   );
   ALTER TABLE sessions ADD COLUMN bundle_id TEXT;
   `,
+
+  // 10 — Member / VIP pricing. A member can carry a standing discount percentage (0 = none, the
+  // default, so existing members are unaffected). Applying it on a tab posts an ordinary
+  // append-only discount line, so the money model is untouched — this column only remembers the rate.
+  `
+  ALTER TABLE members ADD COLUMN discount_pct INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

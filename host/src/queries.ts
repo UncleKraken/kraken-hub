@@ -379,7 +379,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
-  member: { id: string; name: string; points: number } | null;
+  member: { id: string; name: string; points: number; discountPct: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: {
     id: string;
@@ -427,7 +427,9 @@ export function tabDetail(db: DB, tabId: string): TabDetail {
     )
     .all(tabId) as Omit<TabDetail['payments'][number], 'tenders'>[];
   const tenderStmt = db.prepare('SELECT currency, amount_minor AS amountMinor FROM payment_tenders WHERE payment_id = ?');
-  const member = tab.member_id ? (db.prepare('SELECT id, name, points FROM members WHERE id = ?').get(tab.member_id) as { id: string; name: string; points: number } | undefined) : undefined;
+  const member = tab.member_id
+    ? (db.prepare('SELECT id, name, points, discount_pct AS discountPct FROM members WHERE id = ?').get(tab.member_id) as { id: string; name: string; points: number; discountPct: number } | undefined)
+    : undefined;
   return {
     id: tab.id,
     stationId: tab.station_id,
@@ -559,6 +561,7 @@ export interface MemberView {
   points: number;
   notes: string;
   active: boolean;
+  discountPct: number;
 }
 
 /** Members matching a search (name, phone or code), or the most recent if the query is blank. */
@@ -567,16 +570,16 @@ export function searchMembers(db: DB, query: string, limit = 30): MemberView[] {
   const rows = q
     ? (db
         .prepare(
-          `SELECT id, name, phone, code, points, notes, active FROM members
+          `SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members
            WHERE active = 1 AND (name LIKE ? OR phone LIKE ? OR code = ? COLLATE NOCASE) ORDER BY name LIMIT ?`,
         )
         .all(`%${q}%`, `%${q}%`, q, limit) as (Omit<MemberView, 'active'> & { active: number })[])
-    : (db.prepare('SELECT id, name, phone, code, points, notes, active FROM members WHERE active = 1 ORDER BY created_at DESC LIMIT ?').all(limit) as (Omit<MemberView, 'active'> & { active: number })[]);
+    : (db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE active = 1 ORDER BY created_at DESC LIMIT ?').all(limit) as (Omit<MemberView, 'active'> & { active: number })[]);
   return rows.map((m) => ({ ...m, active: !!m.active }));
 }
 
 export function memberDetail(db: DB, id: string) {
-  const m = db.prepare('SELECT id, name, phone, code, points, notes, active FROM members WHERE id = ?').get(id) as (Omit<MemberView, 'active'> & { active: number }) | undefined;
+  const m = db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE id = ?').get(id) as (Omit<MemberView, 'active'> & { active: number }) | undefined;
   if (!m) return null;
   const movements = db
     .prepare(

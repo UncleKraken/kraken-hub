@@ -43,7 +43,10 @@ export function Members({ me, base, version, onClose }: { me: Actor; base: Curre
               {list.map((m) => (
                 <div key={m.id} className="list-row">
                   <div className="list-main">
-                    <b>{m.name}</b>
+                    <b>
+                      {m.name}
+                      {m.discountPct > 0 && <span className="vip-badge">{t('mem.vipRate', { pct: m.discountPct })}</span>}
+                    </b>
                     <small>
                       {[m.code, m.phone].filter(Boolean).join(' · ')}
                     </small>
@@ -75,11 +78,12 @@ function MemberDialog({ member, isManager, onClose, onDone }: { member: Member |
   const [code, setCode] = useState(member?.code ?? '');
   const [notes, setNotes] = useState(member?.notes ?? '');
   const [active, setActive] = useState(member?.active ?? true);
+  const [discountPct, setDiscountPct] = useState(member?.discountPct ?? 0);
   // Existing members are edited by managers only; operators can still create new ones.
   const readonly = !!member && !isManager;
 
   const submit = async () => {
-    const payload = { ...(member ? { id: member.id } : {}), name, phone, code: code.trim() || undefined, notes, ...(member ? { active } : {}) };
+    const payload = { ...(member ? { id: member.id } : {}), name, phone, code: code.trim() || undefined, notes, discountPct, ...(member ? { active } : {}) };
     const res = await run(member ? 'member.update' : 'member.create', payload);
     if (res) {
       toast(t('settings.saved'), 'success');
@@ -112,6 +116,20 @@ function MemberDialog({ member, isManager, onClose, onDone }: { member: Member |
           </label>
         </div>
         <small className="hint">{t('mem.codeHint')}</small>
+        {!readonly && (
+          <label className="field">
+            <span>{t('mem.discount')}</span>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={90}
+              value={discountPct}
+              onChange={(e) => setDiscountPct(Math.max(0, Math.min(90, Math.floor(Number(e.target.value) || 0))))}
+            />
+            <small className="hint">{t('mem.discountHint')}</small>
+          </label>
+        )}
         <label className="field">
           <span>{t('mem.notes')}</span>
           <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} style={{ paddingTop: 10 }} disabled={readonly} />
@@ -314,7 +332,7 @@ export function MemberPicker({ onPick, onClose }: { onPick: (m: Member) => void;
             setCreating(false);
             if (res) {
               toast(t('settings.saved'), 'success');
-              onPick({ id: res.id, name: query.trim(), phone: '', code: null, points: 0, notes: '', active: true });
+              onPick({ id: res.id, name: query.trim(), phone: '', code: null, points: 0, notes: '', active: true, discountPct: 0 });
             }
           }}
         >

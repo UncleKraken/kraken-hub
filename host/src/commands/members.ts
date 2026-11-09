@@ -14,7 +14,11 @@ export interface MemberRow {
   points: number;
   notes: string;
   active: number;
+  discount_pct: number;
 }
+
+/** Stable English prefix that marks a member-discount ledger line, so re-applying can reconcile it. */
+export const MEMBER_DISCOUNT_PREFIX = 'Member discount';
 
 function memberOrThrow(ctx: CommandContext, id: string): MemberRow {
   const m = ctx.db.prepare('SELECT * FROM members WHERE id = ?').get(id) as MemberRow | undefined;
@@ -46,15 +50,16 @@ export const createMember = defineCommand({
     phone: z.string().trim().max(40).default(''),
     code: z.string().trim().max(32).optional(),
     notes: z.string().trim().max(500).default(''),
+    discountPct: z.number().int().min(0).max(90).default(0),
   }),
   handler(ctx, p) {
     const code = p.code?.trim() || null;
     if (code && ctx.db.prepare('SELECT 1 FROM members WHERE code = ? COLLATE NOCASE').get(code)) throw new AppError('error.code_taken', 409);
     const id = ctx.id();
     ctx.db
-      .prepare('INSERT INTO members (id, name, phone, code, notes, active, created_at, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
-      .run(id, p.name, p.phone, code, p.notes, ctx.now, ctx.actor.id);
-    ctx.audit({ action: 'member.create', entity: 'member', entityId: id, after: { name: p.name, code } });
+      .prepare('INSERT INTO members (id, name, phone, code, notes, active, created_at, created_by, discount_pct) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)')
+      .run(id, p.name, p.phone, code, p.notes, ctx.now, ctx.actor.id, p.discountPct);
+    ctx.audit({ action: 'member.create', entity: 'member', entityId: id, after: { name: p.name, code, discountPct: p.discountPct } });
     return { id };
   },
 });
@@ -69,13 +74,14 @@ export const updateMember = defineCommand({
     code: z.string().trim().max(32).optional(),
     notes: z.string().trim().max(500).default(''),
     active: z.boolean().default(true),
+    discountPct: z.number().int().min(0).max(90).default(0),
   }),
   handler(ctx, p) {
     const before = memberOrThrow(ctx, p.id);
     const code = p.code?.trim() || null;
     if (code && ctx.db.prepare('SELECT 1 FROM members WHERE code = ? COLLATE NOCASE AND id <> ?').get(code, p.id)) throw new AppError('error.code_taken', 409);
-    ctx.db.prepare('UPDATE members SET name = ?, phone = ?, code = ?, notes = ?, active = ? WHERE id = ?').run(p.name, p.phone, code, p.notes, p.active ? 1 : 0, p.id);
-    ctx.audit({ action: 'member.update', entity: 'member', entityId: p.id, before: { name: before.name }, after: { name: p.name, code, active: p.active } });
+    ctx.db.prepare('UPDATE members SET name = ?, phone = ?, code = ?, notes = ?, active = ?, discount_pct = ? WHERE id = ?').run(p.name, p.phone, code, p.notes, p.active ? 1 : 0, p.discountPct, p.id);
+    ctx.audit({ action: 'member.update', entity: 'member', entityId: p.id, before: { name: before.name, discountPct: before.discount_pct }, after: { name: p.name, code, active: p.active, discountPct: p.discountPct } });
     return { id: p.id };
   },
 });
@@ -128,6 +134,57 @@ export const redeemPoints = defineCommand({
   },
 });
 
+/**
+ * Applies the attached member's standing discount to an open tab as a single discount line.
+ * Re-applying reconciles: any earlier member-discount line is reversed first and a fresh one is
+ * posted on the current balance, so adding items and tapping again simply refreshes the discount.
+ * Everything is append-only — the reconcile is a reversing line, never an edit.
+ */
+export const applyMemberDiscount = defineCommand({
+  type: 'member.applyDiscount',
+  roles: [...both],
+  schema: z.object({ tabId: z.string() }),
+  handler(ctx, p) {
+    const tab = tabOrThrow(ctx.db, p.tabId);
+    if (tab.status !== 'open') throw new AppError('error.tab_closed', 409);
+    if (!tab.member_id) throw new AppError('error.no_member', 409);
+    const member = memberOrThrow(ctx, tab.member_id);
+    if (member.discount_pct <= 0) throw new AppError('error.no_member_discount', 409);
+
+    // Reverse any live member-discount line so re-applying recomputes against the latest charges.
+    const existing = ctx.db
+      .prepare(
+        `SELECT l.id, l.kind, l.description, l.qty, l.unit_minor, l.amount_minor
+         FROM ledger l
+         WHERE l.tab_id = ? AND l.description LIKE ? AND l.reverses_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = l.id)`,
+      )
+      .get(p.tabId, `${MEMBER_DISCOUNT_PREFIX}%`) as { id: string; kind: string; description: string; qty: number; unit_minor: number; amount_minor: number } | undefined;
+    if (existing) {
+      postLedger(ctx, {
+        tabId: p.tabId,
+        kind: 'adjustment',
+        description: existing.description,
+        qty: -existing.qty,
+        unitMinor: existing.unit_minor,
+        amountMinor: -existing.amount_minor,
+        reversesId: existing.id,
+        reason: 'member discount refreshed',
+      });
+    }
+
+    const charged = (ctx.db.prepare('SELECT COALESCE(SUM(amount_minor),0) AS s FROM ledger WHERE tab_id = ?').get(p.tabId) as { s: number }).s;
+    const paid = (ctx.db.prepare('SELECT COALESCE(SUM(applied_minor),0) AS s FROM payments WHERE tab_id = ?').get(p.tabId) as { s: number }).s;
+    const balance = charged - paid;
+    const discount = Math.min(balance, Math.round((balance * member.discount_pct) / 100));
+    if (discount <= 0) throw new AppError('error.nothing_to_pay', 409);
+
+    postLedger(ctx, { tabId: p.tabId, kind: 'adjustment', description: `${MEMBER_DISCOUNT_PREFIX} (${member.discount_pct}%)`, unitMinor: -discount, amountMinor: -discount });
+    ctx.audit({ action: 'member.applyDiscount', entity: 'member', entityId: member.id, after: { tabId: p.tabId, pct: member.discount_pct, discountMinor: discount } });
+    return { discountMinor: discount, pct: member.discount_pct };
+  },
+});
+
 export const adjustPoints = defineCommand({
   type: 'member.adjustPoints',
   roles: ['manager'],
@@ -141,4 +198,4 @@ export const adjustPoints = defineCommand({
   },
 });
 
-export const memberCommands = [createMember, updateMember, setTabMember, redeemPoints, adjustPoints];
+export const memberCommands = [createMember, updateMember, setTabMember, redeemPoints, applyMemberDiscount, adjustPoints];

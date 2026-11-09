@@ -225,6 +225,7 @@ export interface Member {
   points: number;
   notes: string;
   active: boolean;
+  discountPct: number;
 }
 
 export interface MemberDetail extends Member {
@@ -270,7 +271,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
-  member: { id: string; name: string; points: number } | null;
+  member: { id: string; name: string; points: number; discountPct: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: TabLine[];
   payments: {

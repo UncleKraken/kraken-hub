@@ -539,6 +539,7 @@ function MemberBar({ tab, settings, base }: { tab: TabDetail; settings: FloorSta
   const [picking, setPicking] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const canRedeem = settings.redeemValueMinor > 0 && tab.member && tab.member.points > 0 && tab.totals.balanceMinor > 0;
+  const canDiscount = !!tab.member && tab.member.discountPct > 0 && tab.totals.balanceMinor > 0;
 
   if (!tab.member) {
     return (
@@ -562,10 +563,24 @@ function MemberBar({ tab, settings, base }: { tab: TabDetail; settings: FloorSta
   return (
     <div className="member-bar">
       <div className="member-info">
-        <b>{tab.member.name}</b>
+        <b>
+          {tab.member.name}
+          {tab.member.discountPct > 0 && <span className="vip-badge">{t('mem.vipRate', { pct: tab.member.discountPct })}</span>}
+        </b>
         <small>{t('mem.points', { n: tab.member.points })}</small>
       </div>
       <div className="req-actions">
+        {canDiscount && (
+          <button
+            className="btn btn-quiet"
+            onClick={async () => {
+              const res = await run<{ discountMinor: number }>('member.applyDiscount', { tabId: tab.id });
+              if (res) toast(t('mem.discountApplied', { amount: money(res.discountMinor, base) }), 'success');
+            }}
+          >
+            {t('mem.applyDiscount', { pct: tab.member.discountPct })}
+          </button>
+        )}
         {canRedeem && (
           <button className="btn btn-quiet" onClick={() => setRedeeming(true)}>
             {t('mem.redeemPoints')}
