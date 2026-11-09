@@ -181,6 +181,8 @@ export interface AdminReport {
   revenueMinor: number;
   cashMinor: number;
   cardMinor: number;
+  walletMinor: number;
+  walletLoadedMinor: number;
   tipMinor: number;
   refundMinor: number;
   paymentCount: number;
@@ -226,10 +228,12 @@ export interface Member {
   notes: string;
   active: boolean;
   discountPct: number;
+  walletMinor: number;
 }
 
 export interface MemberDetail extends Member {
   movements: { delta: number; reason: 'earn' | 'redeem' | 'adjust'; note: string | null; createdAt: number; actorName: string | null }[];
+  walletMovements: { id: string; kind: 'topup' | 'spend' | 'adjust'; amountMinor: number; method: 'cash' | 'card' | null; note: string; at: number }[];
   visits: { id: string; openedAt: number; stationName: string | null; chargedMinor: number }[];
 }
 
@@ -271,7 +275,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
-  member: { id: string; name: string; points: number; discountPct: number } | null;
+  member: { id: string; name: string; points: number; discountPct: number; walletMinor: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: TabLine[];
   payments: {

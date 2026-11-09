@@ -540,6 +540,7 @@ function MemberBar({ tab, settings, base }: { tab: TabDetail; settings: FloorSta
   const [redeeming, setRedeeming] = useState(false);
   const canRedeem = settings.redeemValueMinor > 0 && tab.member && tab.member.points > 0 && tab.totals.balanceMinor > 0;
   const canDiscount = !!tab.member && tab.member.discountPct > 0 && tab.totals.balanceMinor > 0;
+  const canPayWallet = !!tab.member && tab.member.walletMinor > 0 && tab.totals.balanceMinor > 0;
 
   if (!tab.member) {
     return (
@@ -567,9 +568,23 @@ function MemberBar({ tab, settings, base }: { tab: TabDetail; settings: FloorSta
           {tab.member.name}
           {tab.member.discountPct > 0 && <span className="vip-badge">{t('mem.vipRate', { pct: tab.member.discountPct })}</span>}
         </b>
-        <small>{t('mem.points', { n: tab.member.points })}</small>
+        <small>
+          {t('mem.points', { n: tab.member.points })}
+          {tab.member.walletMinor > 0 && ` · ${t('wallet.balance', { amount: money(tab.member.walletMinor, base) })}`}
+        </small>
       </div>
       <div className="req-actions">
+        {canPayWallet && (
+          <button
+            className="btn btn-quiet"
+            onClick={async () => {
+              const res = await run<{ spentMinor: number }>('member.payFromWallet', { tabId: tab.id });
+              if (res) toast(t('wallet.paid', { amount: money(res.spentMinor, base) }), 'success');
+            }}
+          >
+            {t('wallet.pay')}
+          </button>
+        )}
         {canDiscount && (
           <button
             className="btn btn-quiet"

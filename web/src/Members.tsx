@@ -3,7 +3,7 @@ import { api } from './api';
 import { dateTime, money } from './format';
 import { t } from './i18n';
 import type { Actor, Currency, Member, MemberDetail } from './types';
-import { Dialog, useRun } from './ui';
+import { Dialog, MoneyInput, useRun } from './ui';
 
 /** The member directory. Operators create and look up members; managers also edit and adjust points. */
 export function Members({ me, base, version, onClose }: { me: Actor; base: Currency; version: number; onClose: () => void }) {
@@ -12,6 +12,7 @@ export function Members({ me, base, version, onClose }: { me: Actor; base: Curre
   const [list, setList] = useState<Member[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<Member | 'new' | null>(null);
+  const [toppingUp, setToppingUp] = useState<Member | null>(null);
 
   const search = useCallback(() => api.get<Member[]>(`/api/members?q=${encodeURIComponent(query)}`).then(setList).catch(() => undefined), [query]);
   useEffect(() => {
@@ -51,7 +52,13 @@ export function Members({ me, base, version, onClose }: { me: Actor; base: Curre
                       {[m.code, m.phone].filter(Boolean).join(' · ')}
                     </small>
                   </div>
-                  <span className="list-meta">{t('mem.points', { n: m.points })}</span>
+                  <span className="list-meta">
+                    {t('mem.points', { n: m.points })}
+                    {m.walletMinor > 0 && <span className="wallet-chip">{money(m.walletMinor, base)}</span>}
+                  </span>
+                  <button className="btn btn-quiet" onClick={() => setToppingUp(m)}>
+                    {t('wallet.topUp')}
+                  </button>
                   <button className="btn btn-quiet" onClick={() => setSelected(m.id)}>
                     {t('mem.history')}
                   </button>
@@ -67,7 +74,57 @@ export function Members({ me, base, version, onClose }: { me: Actor; base: Curre
       {selected && (
         <MemberDetailDialog id={selected} base={base} isManager={isManager} onClose={() => setSelected(null)} onEdit={(m) => { setSelected(null); setEditing(m); }} onChanged={search} />
       )}
+      {toppingUp && <TopUpDialog member={toppingUp} base={base} onClose={() => setToppingUp(null)} onDone={search} />}
     </div>
+  );
+}
+
+function TopUpDialog({ member, base, onClose, onDone }: { member: Member; base: Currency; onClose: () => void; onDone: () => Promise<unknown> }) {
+  const { run, toast } = useRun();
+  const [amount, setAmount] = useState(0);
+  const [method, setMethod] = useState<'cash' | 'card'>('cash');
+
+  return (
+    <Dialog title={`${t('wallet.topUp')}: ${member.name}`} onClose={onClose}>
+      <div className="form-grid">
+        <p className="hint">{t('wallet.current', { amount: money(member.walletMinor, base) })}</p>
+        <label className="field">
+          <span>{t('wallet.amount')}</span>
+          <MoneyInput currency={base} label={t('wallet.amount')} value={amount} onChange={setAmount} />
+        </label>
+        <div className="field">
+          <span>{t('wallet.method')}</span>
+          <div className="seg">
+            <button type="button" aria-pressed={method === 'cash'} onClick={() => setMethod('cash')}>
+              {t('checkout.cash')}
+            </button>
+            <button type="button" aria-pressed={method === 'card'} onClick={() => setMethod('card')}>
+              {t('checkout.card')}
+            </button>
+          </div>
+        </div>
+        <div className="dialog-actions">
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-quiet" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={amount <= 0}
+            onClick={async () => {
+              const res = await run<{ balanceMinor: number }>('member.topup', { memberId: member.id, amountMinor: amount, method });
+              if (res) {
+                toast(t('wallet.loaded', { amount: money(amount, base) }), 'success');
+                await onDone();
+                onClose();
+              }
+            }}
+          >
+            {t('wallet.load')}
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -332,7 +389,7 @@ export function MemberPicker({ onPick, onClose }: { onPick: (m: Member) => void;
             setCreating(false);
             if (res) {
               toast(t('settings.saved'), 'success');
-              onPick({ id: res.id, name: query.trim(), phone: '', code: null, points: 0, notes: '', active: true, discountPct: 0 });
+              onPick({ id: res.id, name: query.trim(), phone: '', code: null, points: 0, notes: '', active: true, discountPct: 0, walletMinor: 0 });
             }
           }}
         >

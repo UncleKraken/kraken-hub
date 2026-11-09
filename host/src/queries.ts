@@ -1,4 +1,5 @@
 import type { Actor } from './auth.js';
+import { walletBalance, walletMovements, type WalletMovement } from './commands/members.js';
 import { suggestedFloat, summarizeShift, type ShiftSummary } from './commands/shifts.js';
 import type { DB } from './db/index.js';
 import { summarize, type DeviceEventRow, type DeviceHealthRow, type HealthSummary } from './devices/health.js';
@@ -298,9 +299,11 @@ export function deviceHealthDetail(db: DB, deviceId: string, online: Set<string>
 export interface BusinessReport {
   from: number;
   to: number;
-  revenueMinor: number; // net of refunds, base currency
+  revenueMinor: number; // net of refunds, base currency; includes wallet spend
   cashMinor: number;
   cardMinor: number;
+  walletMinor: number; // revenue settled from member wallets (prepaid credit spent)
+  walletLoadedMinor: number; // prepaid credit loaded onto wallets in the range (not yet revenue)
   tipMinor: number;
   refundMinor: number; // total refunded (positive number)
   paymentCount: number;
@@ -329,6 +332,17 @@ export function businessReport(db: DB, from: number, to: number, tzOffsetMin: nu
     )
     .get(from, to) as { revenue: number; cash: number; card: number; tip: number; refund: number; n: number };
 
+  // Wallet spend is revenue recognised now (prepaid credit turned into a sale); top-ups are credit
+  // loaded, held as a liability until spent — shown separately, never counted as revenue.
+  const wallet = db
+    .prepare(
+      `SELECT
+         COALESCE(-SUM(CASE WHEN kind = 'spend' THEN amount_minor ELSE 0 END), 0) AS spent,
+         COALESCE(SUM(CASE WHEN kind = 'topup' THEN amount_minor ELSE 0 END), 0) AS loaded
+       FROM member_wallet WHERE created_at >= ? AND created_at < ?`,
+    )
+    .get(from, to) as { spent: number; loaded: number };
+
   const sessionCount = (db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ? AND started_at < ?').get(from, to) as { n: number }).n;
 
   const topProducts = db
@@ -344,24 +358,29 @@ export function businessReport(db: DB, from: number, to: number, tzOffsetMin: nu
     )
     .all(from, to) as BusinessReport['topProducts'];
 
-  const daily = (
-    db
-      .prepare(
-        // CAST keeps the bucket an integer day index; without it a bound offset can make the
-        // division REAL, splitting one calendar day into several buckets.
-        `SELECT CAST((created_at + ?) / 86400000 AS INTEGER) AS dayIdx, SUM(applied_minor) AS rev
-         FROM payments WHERE created_at >= ? AND created_at < ?
-         GROUP BY dayIdx ORDER BY dayIdx`,
-      )
-      .all(off, from, to) as { dayIdx: number; rev: number }[]
-  ).map((r) => ({ day: new Date(r.dayIdx * 86400000).toISOString().slice(0, 10), revenueMinor: r.rev }));
+  // Daily revenue = payments + wallet spend, bucketed by local day. CAST keeps the bucket an
+  // integer day index; without it a bound offset can make the division REAL and split a day.
+  const byDay = new Map<number, number>();
+  for (const r of db
+    .prepare(`SELECT CAST((created_at + ?) / 86400000 AS INTEGER) AS dayIdx, SUM(applied_minor) AS rev FROM payments WHERE created_at >= ? AND created_at < ? GROUP BY dayIdx`)
+    .all(off, from, to) as { dayIdx: number; rev: number }[])
+    byDay.set(r.dayIdx, (byDay.get(r.dayIdx) ?? 0) + r.rev);
+  for (const r of db
+    .prepare(`SELECT CAST((created_at + ?) / 86400000 AS INTEGER) AS dayIdx, -SUM(amount_minor) AS rev FROM member_wallet WHERE kind = 'spend' AND created_at >= ? AND created_at < ? GROUP BY dayIdx`)
+    .all(off, from, to) as { dayIdx: number; rev: number }[])
+    byDay.set(r.dayIdx, (byDay.get(r.dayIdx) ?? 0) + r.rev);
+  const daily = [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([dayIdx, rev]) => ({ day: new Date(dayIdx * 86400000).toISOString().slice(0, 10), revenueMinor: rev }));
 
   return {
     from,
     to,
-    revenueMinor: totals.revenue,
+    revenueMinor: totals.revenue + wallet.spent,
     cashMinor: totals.cash,
     cardMinor: totals.card,
+    walletMinor: wallet.spent,
+    walletLoadedMinor: wallet.loaded,
     tipMinor: totals.tip,
     refundMinor: totals.refund,
     paymentCount: totals.n,
@@ -379,7 +398,7 @@ export interface TabDetail {
   status: 'open' | 'closed';
   openedAt: number;
   closedAt: number | null;
-  member: { id: string; name: string; points: number; discountPct: number } | null;
+  member: { id: string; name: string; points: number; discountPct: number; walletMinor: number } | null;
   totals: { chargedMinor: number; paidMinor: number; balanceMinor: number };
   lines: {
     id: string;
@@ -427,9 +446,10 @@ export function tabDetail(db: DB, tabId: string): TabDetail {
     )
     .all(tabId) as Omit<TabDetail['payments'][number], 'tenders'>[];
   const tenderStmt = db.prepare('SELECT currency, amount_minor AS amountMinor FROM payment_tenders WHERE payment_id = ?');
-  const member = tab.member_id
+  const memberRow = tab.member_id
     ? (db.prepare('SELECT id, name, points, discount_pct AS discountPct FROM members WHERE id = ?').get(tab.member_id) as { id: string; name: string; points: number; discountPct: number } | undefined)
     : undefined;
+  const member = memberRow ? { ...memberRow, walletMinor: walletBalance(db, memberRow.id) } : undefined;
   return {
     id: tab.id,
     stationId: tab.station_id,
@@ -562,6 +582,7 @@ export interface MemberView {
   notes: string;
   active: boolean;
   discountPct: number;
+  walletMinor: number;
 }
 
 /** Members matching a search (name, phone or code), or the most recent if the query is blank. */
@@ -573,14 +594,15 @@ export function searchMembers(db: DB, query: string, limit = 30): MemberView[] {
           `SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members
            WHERE active = 1 AND (name LIKE ? OR phone LIKE ? OR code = ? COLLATE NOCASE) ORDER BY name LIMIT ?`,
         )
-        .all(`%${q}%`, `%${q}%`, q, limit) as (Omit<MemberView, 'active'> & { active: number })[])
-    : (db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE active = 1 ORDER BY created_at DESC LIMIT ?').all(limit) as (Omit<MemberView, 'active'> & { active: number })[]);
-  return rows.map((m) => ({ ...m, active: !!m.active }));
+        .all(`%${q}%`, `%${q}%`, q, limit) as (Omit<MemberView, 'active' | 'walletMinor'> & { active: number })[])
+    : (db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE active = 1 ORDER BY created_at DESC LIMIT ?').all(limit) as (Omit<MemberView, 'active' | 'walletMinor'> & { active: number })[]);
+  return rows.map((m) => ({ ...m, active: !!m.active, walletMinor: walletBalance(db, m.id) }));
 }
 
 export function memberDetail(db: DB, id: string) {
-  const m = db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE id = ?').get(id) as (Omit<MemberView, 'active'> & { active: number }) | undefined;
+  const m = db.prepare('SELECT id, name, phone, code, points, notes, active, discount_pct AS discountPct FROM members WHERE id = ?').get(id) as (Omit<MemberView, 'active' | 'walletMinor'> & { active: number }) | undefined;
   if (!m) return null;
+  const wallet: WalletMovement[] = walletMovements(db, id);
   const movements = db
     .prepare(
       `SELECT pm.delta, pm.reason, pm.note, pm.created_at AS createdAt, u.display_name AS actorName
@@ -595,7 +617,7 @@ export function memberDetail(db: DB, id: string) {
        WHERE t.member_id = ? ORDER BY t.opened_at DESC LIMIT 20`,
     )
     .all(id);
-  return { ...m, active: !!m.active, movements, visits };
+  return { ...m, active: !!m.active, walletMinor: walletBalance(db, id), walletMovements: wallet, movements, visits };
 }
 
 export function auditPage(db: DB, beforeSeq: number | null, limit = 100) {

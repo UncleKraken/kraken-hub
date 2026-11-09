@@ -458,4 +458,27 @@ export const migrations: string[] = [
   `
   ALTER TABLE members ADD COLUMN discount_pct INTEGER NOT NULL DEFAULT 0;
   `,
+
+  // 11 — Member wallet (prepaid balance). An append-only ledger of credit a member holds: top-ups
+  // add, paying a tab spends, a manager correction adjusts. Balance = SUM(amount_minor). Money is
+  // recognised as revenue when it is spent on a tab (a 'transfer' settlement line), not when loaded —
+  // a top-up is the café holding the customer's cash, so a cash top-up is a drawer movement, not a
+  // sale. Append-only, like the other money tables.
+  `
+  CREATE TABLE member_wallet (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL REFERENCES members(id),
+    kind TEXT NOT NULL CHECK (kind IN ('topup', 'spend', 'adjust')),
+    amount_minor INTEGER NOT NULL,                 -- signed base minor: + credit, - debit
+    method TEXT CHECK (method IN ('cash', 'card')),-- how a top-up was paid; null otherwise
+    tab_id TEXT REFERENCES tabs(id),               -- the tab a spend settled; null otherwise
+    note TEXT NOT NULL DEFAULT '',
+    reverses_id TEXT REFERENCES member_wallet(id),
+    actor_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX wallet_by_member ON member_wallet(member_id);
+  CREATE TRIGGER wallet_no_update BEFORE UPDATE ON member_wallet BEGIN SELECT RAISE(ABORT, 'wallet is append-only'); END;
+  CREATE TRIGGER wallet_no_delete BEFORE DELETE ON member_wallet BEGIN SELECT RAISE(ABORT, 'wallet is append-only'); END;
+  `,
 ];

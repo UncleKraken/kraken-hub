@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { DB } from '../db/index.js';
 import { readSettings, tabOrThrow } from '../domain/venue.js';
 import { AppError, notFound } from '../errors.js';
 import { defineCommand, type CommandContext } from './bus.js';
@@ -20,7 +21,30 @@ export interface MemberRow {
 /** Stable English prefix that marks a member-discount ledger line, so re-applying can reconcile it. */
 export const MEMBER_DISCOUNT_PREFIX = 'Member discount';
 
-function memberOrThrow(ctx: CommandContext, id: string): MemberRow {
+/** Current prepaid wallet balance for a member, in base minor units (SUM of the append-only ledger). */
+export function walletBalance(db: DB, memberId: string): number {
+  return (db.prepare('SELECT COALESCE(SUM(amount_minor), 0) AS s FROM member_wallet WHERE member_id = ?').get(memberId) as { s: number }).s;
+}
+
+export interface WalletMovement {
+  id: string;
+  kind: 'topup' | 'spend' | 'adjust';
+  amountMinor: number;
+  method: 'cash' | 'card' | null;
+  note: string;
+  at: number;
+}
+
+/** Recent wallet movements, newest first. */
+export function walletMovements(db: DB, memberId: string, limit = 50): WalletMovement[] {
+  return (
+    db
+      .prepare('SELECT id, kind, amount_minor AS amountMinor, method, note, created_at AS at FROM member_wallet WHERE member_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?')
+      .all(memberId, limit) as WalletMovement[]
+  );
+}
+
+export function memberOrThrow(ctx: CommandContext, id: string): MemberRow {
   const m = ctx.db.prepare('SELECT * FROM members WHERE id = ?').get(id) as MemberRow | undefined;
   if (!m) throw notFound('member');
   return m;

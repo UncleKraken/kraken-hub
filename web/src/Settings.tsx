@@ -1453,6 +1453,18 @@ function Reports({ base }: { base: Currency }) {
                 <small>{t('report.card')}</small>
                 <b>{money(data.cardMinor, base)}</b>
               </div>
+              {data.walletMinor > 0 && (
+                <div className="data-card">
+                  <small>{t('report.wallet')}</small>
+                  <b>{money(data.walletMinor, base)}</b>
+                </div>
+              )}
+              {data.walletLoadedMinor > 0 && (
+                <div className="data-card">
+                  <small>{t('report.walletLoaded')}</small>
+                  <b>{money(data.walletLoadedMinor, base)}</b>
+                </div>
+              )}
               <div className="data-card">
                 <small>{t('report.tips')}</small>
                 <b>{money(data.tipMinor, base)}</b>
