@@ -1,6 +1,8 @@
 # Running Kraken Hub
 
-This is the developer setup for the pilot. A one-click Windows installer comes in Phase 2.
+**Setting up the café? Use [LIVE-TEST.md](LIVE-TEST.md)** — double-click `scripts\setup.bat` on the
+counter laptop and it installs Node, builds, opens the firewall, and sets the server to start at
+boot. The steps below are the manual/developer version of the same thing.
 
 ## Install on the host PC (Windows)
 

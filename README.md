@@ -96,7 +96,10 @@ host installs with nothing to compile.
 
 ## Getting started
 
-See **[docs/RUNNING.md](docs/RUNNING.md)** for the full walkthrough. In short, on the host PC:
+Setting up the café on a laptop + PC? Follow **[docs/LIVE-TEST.md](docs/LIVE-TEST.md)**: get the
+code onto the laptop and double-click `scripts\setup.bat` — it installs Node, builds, opens the
+firewall, and sets the server to start at boot. For the manual/developer path, see
+**[docs/RUNNING.md](docs/RUNNING.md)**:
 
 ```powershell
 git clone https://github.com/UncleKraken/kraken-hub.git
@@ -127,8 +130,8 @@ A solid first version for the pilot is the goal, and reliability beats feature c
 | --- | --- | --- |
 | 1 · Host & Hub Desk | Nov 2026 | ✅ Floor, sessions, tabs, POS, checkout, currencies, shifts, tips, ledger, roles |
 | 2 · Hub Client | Dec 2026 | ✅ Pairing, lock screen, guest approval, widget, remote power, setup mode *(lockdown presets & session wipe pending)* |
-| 3 · Pilot & release | Jan 2027 | 🔜 Live café pilot · bookings ✅ · inventory ✅ · health ✅ · backups ✅ · reports ✅ · floor map ✅ · multi-branch rollup ✅ |
-| After release | 2027 | Shared members & catalog across branches, remote desktop, router Boost, storage modes, bundles & VIP pricing, more languages |
+| 3 · Pilot & release | Jan 2027 | 🔜 Live café pilot · bookings ✅ · inventory ✅ · health ✅ · backups ✅ · reports ✅ · floor map ✅ · bundles ✅ · member VIP & wallet ✅ · one-click server setup ✅ · multi-branch rollup ✅ |
+| After release | 2027 | Shared members & catalog across branches, remote desktop, router Boost, storage modes, happy-hour pricing, more languages |
 
 **Pilot:** the owner's own café branch, hardware going in now.
 
