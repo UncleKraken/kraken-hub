@@ -1,4 +1,4 @@
-# Kraken Hub — server runner.
+# Kraken Hub - server runner.
 # Started by the "KrakenHub Server" scheduled task at boot (and by setup.bat right after install).
 # Keeps the host running: if it ever stops, this restarts it. The database lives OUTSIDE the app
 # folder (in ProgramData) so updating or re-downloading the app never touches your data.

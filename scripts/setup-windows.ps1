@@ -1,11 +1,11 @@
-# Kraken Hub — one-time server setup for Windows (the counter laptop).
+# Kraken Hub - one-time server setup for Windows (the counter laptop).
 # Run it by double-clicking scripts\setup.bat (which handles the admin prompt). It:
 #   1. makes sure Node.js is installed,
 #   2. installs and builds the app,
 #   3. opens the firewall so the PCs can reach it,
 #   4. sets it to start automatically at boot, and starts it now,
 #   5. prints the address to open from a PC or tablet.
-# Safe to run again any time — it just re-applies each step.
+# Safe to run again any time - it just re-applies each step.
 
 param([switch]$Seed)
 $ErrorActionPreference = 'Stop'
@@ -22,7 +22,7 @@ if (-not $admin) {
 
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
-Write-Host "Kraken Hub setup — app folder: $repo" -ForegroundColor Cyan
+Write-Host "Kraken Hub setup - app folder: $repo" -ForegroundColor Cyan
 
 # --- 1. Node.js ---
 function Get-NodeMajor {
@@ -32,7 +32,7 @@ function Get-NodeMajor {
     try { return [int]((& $n -v) -replace 'v(\d+).*', '$1') } catch { return 0 }
 }
 if ((Get-NodeMajor) -lt 22) {
-    Write-Host 'Node.js 22+ not found — installing it...' -ForegroundColor Yellow
+    Write-Host 'Node.js 22+ not found - installing it...' -ForegroundColor Yellow
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
         $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path', 'User')

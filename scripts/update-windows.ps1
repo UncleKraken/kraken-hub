@@ -1,4 +1,4 @@
-# Kraken Hub — update the server to the latest version.
+# Kraken Hub - update the server to the latest version.
 # Double-click scripts\update.bat. It pulls the newest code, rebuilds, and restarts the host.
 # Your data (members, money, settings) lives in ProgramData and is never touched by this.
 
@@ -14,7 +14,7 @@ Set-Location $repo
 Write-Host "Updating Kraken Hub in $repo" -ForegroundColor Cyan
 
 if (Test-Path (Join-Path $repo '.git')) {
-    cmd /c 'git pull' ; if ($LASTEXITCODE -ne 0) { Write-Host 'git pull failed — check your internet, then try again.' -ForegroundColor Red; Read-Host 'Press Enter'; return }
+    cmd /c 'git pull' ; if ($LASTEXITCODE -ne 0) { Write-Host 'git pull failed - check your internet, then try again.' -ForegroundColor Red; Read-Host 'Press Enter'; return }
 } else {
     Write-Host 'This copy was not installed with Git.' -ForegroundColor Yellow
     Write-Host 'Download the latest ZIP from GitHub, unzip it over this folder, then run setup.bat instead.'
